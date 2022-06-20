@@ -2,14 +2,12 @@ import os
 import sys
 from dataclasses import dataclass, field
 
-from sklearn import model_selection
-
 from barthez.modeling_lsg_barthez import *
 import warnings
+import json 
 
 from transformers import (
     AutoConfig,
-    AutoModel,
     AutoTokenizer,
     HfArgumentParser,
     set_seed,
@@ -72,6 +70,13 @@ class FileArguments:
         default=False,
         metadata={
             "help": "Only resize position embedding from a lsg model"}
+    )
+
+    model_kwargs: Optional[str] = field(
+        default="{}",
+        metadata={
+            "help": "Model kwargs, ex: \"{'sparsity_type': 'none', 'mask_first_token': true}\""
+        },
     )
 
     seed: int = field(
@@ -212,7 +217,12 @@ def main():
     _architectures = [_MODEL_TYPE_DICT[arc][0] for arc in model_types]
 
     # Load model
-    config = LSGMBartConfig.from_pretrained(args.initial_model, architectures=_architectures)
+    config = LSGMBartConfig.from_pretrained(
+        args.initial_model, 
+        architectures=_architectures, 
+        trust_remote_code=True, 
+        **json.loads(args.model_kwargs.replace("'", "\""))
+        )
     model = _model.from_pretrained(args.initial_model, use_auth_token=True, config=config)
     tokenizer = AutoTokenizer.from_pretrained(args.initial_model, use_auth_token=True)
 
@@ -222,7 +232,7 @@ def main():
 
     max_pos = args.max_sequence_length
     model.config.max_position_embeddings = max_pos
-    model.config._name_or_path = "ccdv/" + args.model_name
+    model.config._name_or_path = args.model_name
 
     # Hack because of architecture
     is_base = True if _architecture == "LSGMBartModel" else False

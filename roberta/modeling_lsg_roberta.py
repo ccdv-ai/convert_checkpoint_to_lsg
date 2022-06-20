@@ -30,6 +30,7 @@ class LSGRobertaConfig(RobertaConfig):
         base_model_prefix="lsg",
         block_size=128,
         lsh_num_pre_rounds=1,
+        mask_first_token=False,
         num_global_tokens=1,
         pool_with_global=True,
         sparse_block_size=128,
@@ -45,6 +46,7 @@ class LSGRobertaConfig(RobertaConfig):
         self.base_model_prefix = base_model_prefix
         self.block_size = block_size
         self.lsh_num_pre_rounds = lsh_num_pre_rounds
+        self.mask_first_token = mask_first_token
         self.num_global_tokens = num_global_tokens
         self.pool_with_global = pool_with_global
         self.sparse_block_size = sparse_block_size
@@ -950,6 +952,7 @@ class LSGRobertaModel(LSGRobertaPreTrainedModel, RobertaModel):
         assert hasattr(config, "block_size") and hasattr(config, "adaptive")
         self.block_size = config.block_size
         self.adaptive = config.adaptive
+        self.mask_first_token = config.mask_first_token
         self.pool_with_global = config.pool_with_global
 
         self.embeddings = LSGRobertaEmbeddings(config)
@@ -986,6 +989,8 @@ class LSGRobertaModel(LSGRobertaPreTrainedModel, RobertaModel):
 
         if attention_mask is None:
             attention_mask = torch.ones(n, t, device=inputs_.device)
+        if self.mask_first_token:
+            attention_mask[:,0] = 0
             
         b = self.block_size * 2
         pad = t % self.block_size
