@@ -1033,7 +1033,7 @@ class LSGPegasusModel(LSGPegasusPreTrainedModel, PegasusModel):
             )
 
         # Pad mask if we keep globals
-        if self.pass_global_tokens_to_decoder:
+        if self.pass_global_tokens_to_decoder and attention_mask is not None:
             attention_mask = torch.nn.functional.pad(attention_mask, pad=(self.num_global_tokens, 0), value=1)
 
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)

@@ -27,3 +27,4 @@ bart/modeling_lsg_bart2.py
 convert3.sh
 test_modules.py
 bart/modeling_lsg_bart_old.py
+camembert_test/*
