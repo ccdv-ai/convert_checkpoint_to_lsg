@@ -3,7 +3,6 @@ import torch
 from transformers.models.pegasus.modeling_pegasus import *
 from transformers.models.pegasus.modeling_pegasus import _expand_mask
 import torch.nn as nn
-from torch.nn import BCEWithLogitsLoss
 import sys
 
 AUTO_MAP = {
@@ -265,7 +264,7 @@ class LSGAttentionProduct(nn.Module):
 
         # Pad before block reshaping
         if is_attn_mask:
-            pad_value = -10000  
+            pad_value = torch.finfo(hidden_states.dtype).min 
             hidden_states = hidden_states.transpose(-1, -2)
         else: 
             pad_value = 0
@@ -294,7 +293,7 @@ class LSGAttentionProduct(nn.Module):
 
         # Pad before block reshaping
         if is_attn_mask:
-            pad_value = -10000  
+            pad_value = torch.finfo(hidden_states.dtype).min  
             hidden_states = hidden_states.transpose(-1, -2)
         else: 
             pad_value = 0
@@ -423,7 +422,7 @@ class LSGPegasusEncoderAttention(BaseSelfAttention):
         keys = keys.sum(dim=-2) / (mask + 1e-6)
         values = values.sum(dim=-2) / (mask + 1e-6)
 
-        mask = - (1. - mask.clamp(0, 1)) * 1e4
+        mask = (1. - mask.clamp(0, 1)) * torch.finfo(mask.dtype).min
         return keys.reshape(n, h, -1, d), values.reshape(n, h, -1, d), mask.expand(-1, h, -1, -1).transpose(-1, -2)
 
     def get_sparse_tokens_with_stride(self, keys, values, mask):
@@ -488,7 +487,7 @@ class LSGPegasusEncoderAttention(BaseSelfAttention):
         keys /= mask + 1e-8
         values /= mask + 1e-8
 
-        mask = -10000 * (1. - mask.clamp(0, 1))
+        mask = (1. - mask.clamp(0, 1)) * torch.finfo(mask.dtype).min
 
         return keys.reshape(n, h, -1, d), values.reshape(n, h, -1, d), mask.transpose(-1, -2).reshape(n, h, 1, -1)
 
@@ -772,7 +771,7 @@ class LSGPegasusEncoder(LSGPegasusPreTrainedModel, PegasusEncoder):
         n, t = inputs_.size()[:2]
 
         if attention_mask is None:
-            attention_mask = torch.ones(n, t, device=inputs_.device)
+            attention_mask = torch.ones(n, t, device=inputs_.device, dtype=inputs_.dtype)
         if self.mask_first_token:
             attention_mask[:,0] = 0
             

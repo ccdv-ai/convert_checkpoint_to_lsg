@@ -227,7 +227,11 @@ class CausalAttentionProduct(nn.Module):
 
             # Add causal mask
             causal_shape = (self.block_size, self.block_size) if causal_shape is None else causal_shape
-            causal_mask = torch.tril(torch.ones(*causal_shape, device=attention_mask.device), diagonal=-1).T * (-10000)
+            causal_mask = torch.tril(
+                torch.ones(*causal_shape, device=attention_mask.device, dtype=attention_scores.dtype), 
+                diagonal=-1
+                ) 
+            causal_mask = causal_mask.T * torch.finfo(attention_scores.dtype).min
             attention_scores[..., -causal_shape[0]:, -causal_shape[1]:] = causal_mask
 
             del attention_mask
@@ -345,7 +349,7 @@ class LSGAttentionProduct(nn.Module):
 
         # Pad before block reshaping
         if is_attn_mask:
-            pad_value = -10000  
+            pad_value = torch.finfo(hidden_states.dtype).min  
             hidden_states = hidden_states.transpose(-1, -2)
         else: 
             pad_value = 0
@@ -378,7 +382,7 @@ class LSGAttentionProduct(nn.Module):
 
         # Pad before block reshaping
         if is_attn_mask:
-            pad_value = -10000  
+            pad_value = torch.finfo(hidden_states.dtype).min
             hidden_states = hidden_states.transpose(-1, -2)
         else: 
             pad_value = 0
@@ -511,7 +515,7 @@ class LSGSelfAttention(BaseSelfAttention):
         keys = keys.sum(dim=-2) / (mask + 1e-6)
         values = values.sum(dim=-2) / (mask + 1e-6)
 
-        mask = - (1. - mask.clamp(0, 1)) * 1e4
+        mask = (1. - mask.clamp(0, 1)) * torch.finfo(mask.dtype).min
         return keys.reshape(n, h, -1, d), values.reshape(n, h, -1, d), mask.expand(-1, h, -1, -1).transpose(-1, -2)
 
     def get_sparse_tokens_with_stride(self, keys, values, mask):
@@ -576,7 +580,7 @@ class LSGSelfAttention(BaseSelfAttention):
         keys /= mask + 1e-8
         values /= mask + 1e-8
 
-        mask = -10000 * (1. - mask.clamp(0, 1))
+        mask = (1. - mask.clamp(0, 1)) * torch.finfo(mask.dtype).min
 
         return keys.reshape(n, h, -1, d), values.reshape(n, h, -1, d), mask.transpose(-1, -2).reshape(n, h, 1, -1)
 
@@ -871,7 +875,7 @@ class LSGTransformerBlock(nn.Module):
         # Self-Attention
         sa_output = self.attention(
             hidden_states=x,
-            attention_mask=-10000*(1 - attn_mask).unsqueeze(1).unsqueeze(1),
+            attention_mask=torch.finfo(x.dtype).min*(1 - attn_mask).unsqueeze(1).unsqueeze(1),
             head_mask=head_mask,
             output_attentions=output_attentions,
         )
@@ -948,7 +952,7 @@ class LSGDistilBertModel(LSGDistilBertPreTrainedModel, DistilBertModel):
         n, t = inputs_.size()[:2]
 
         if attention_mask is None:
-            attention_mask = torch.ones(n, t, device=inputs_.device)
+            attention_mask = torch.ones(n, t, device=inputs_.device, dtype=inputs_.dtype)
         if self.mask_first_token:
             attention_mask[:,0] = 0
             

@@ -1,29 +1,28 @@
 from logging import warn
-from transformers.models.bert.modeling_bert import *
+from transformers.models.roberta.modeling_roberta import *
 import torch
 import torch.nn as nn
-from transformers.models.bert.configuration_bert import BertConfig
+from transformers.models.xlm_roberta.configuration_xlm_roberta import XLMRobertaConfig
 import sys
 
 AUTO_MAP = {
-        "AutoModel": "modeling_lsg_bert.LSGBertModel",
-        "AutoModelForCausalLM": "modeling_lsg_bert.LSGBertLMHeadModel",
-        "AutoModelForMaskedLM": "modeling_lsg_bert.LSGBertForMaskedLM",
-        "AutoModelForPreTraining": "modeling_lsg_bert.LSGBertForPreTraining",
-        "AutoModelForMultipleChoice": "modeling_lsg_bert.LSGBertForMultipleChoice",
-        "AutoModelForQuestionAnswering": "modeling_lsg_bert.LSGBertForQuestionAnswering",
-        "AutoModelForSequenceClassification": "modeling_lsg_bert.LSGBertForSequenceClassification",
-        "AutoModelForTokenClassification": "modeling_lsg_bert.LSGBertForTokenClassification"
+        "AutoModel": "modeling_lsg_xlm_roberta.LSGXLMRobertaModel",
+        "AutoModelForCausalLM": "modeling_lsg_xlm_roberta.LSGXLMRobertaForCausalLM",
+        "AutoModelForMaskedLM": "modeling_lsg_xlm_roberta.LSGXLMRobertaForMaskedLM",
+        "AutoModelForMultipleChoice": "modeling_lsg_xlm_roberta.LSGXLMRobertaForMultipleChoice",
+        "AutoModelForQuestionAnswering": "modeling_lsg_xlm_roberta.LSGXLMRobertaForQuestionAnswering",
+        "AutoModelForSequenceClassification": "modeling_lsg_xlm_roberta.LSGXLMRobertaForSequenceClassification",
+        "AutoModelForTokenClassification": "modeling_lsg_xlm_roberta.LSGXLMRobertaForTokenClassification"
     }
 
-class LSGBertConfig(BertConfig):
+class LSGXLMRobertaConfig(XLMRobertaConfig):
     """
-    This class overrides :class:`~transformers.BertConfig`. Please check the superclass for the appropriate
+    This class overrides :class:`~transformers.RobertaConfig`. Please check the superclass for the appropriate
     documentation alongside usage examples.
     """
 
     base_model_prefix = "lsg"
-    model_type = "bert"
+    model_type = "xlm-roberta"
 
     def __init__(
         self,
@@ -39,7 +38,7 @@ class LSGBertConfig(BertConfig):
         sparsity_type="norm",
         **kwargs
         ):
-        """Constructs LSGBertConfig."""
+        """Constructs LSGXLMRobertaConfig."""
         super().__init__(**kwargs)
 
         self.adaptive = adaptive
@@ -53,7 +52,7 @@ class LSGBertConfig(BertConfig):
         self.sparse_block_size = sparse_block_size
         self.sparsity_factor = sparsity_factor
         self.sparsity_type = sparsity_type
-        
+
         if sparsity_type not in [None, "none", "norm", "lsh", "pooling", "stride", "block_stride"]:
             logger.warning(
                 "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride'], setting sparsity_type=None, computation will skip sparse attention")
@@ -64,7 +63,7 @@ class LSGBertConfig(BertConfig):
                 logger.warning(
                 "[WARNING CONFIG]: sparsity_factor > encoder_attention_heads is not recommended for stride/block_stride sparsity"
             )
-
+        
         if self.num_global_tokens < 1:
             logger.warning(
                 "[WARNING CONFIG]: num_global_tokens < 1 is not compatible, setting num_global_tokens=1"
@@ -79,7 +78,7 @@ class LSGBertConfig(BertConfig):
         if self.sparsity_factor > 0:
             assert self.block_size % self.sparsity_factor == 0, "[ERROR CONFIG]: block_size must be divisible by sparsity_factor"
             assert self.block_size//self.sparsity_factor >= 1, "[ERROR CONFIG]: make sure block_size >= sparsity_factor"
-        
+            
         
 class BaseSelfAttention(nn.Module):
     
@@ -143,7 +142,7 @@ class BaseAttentionProduct(nn.Module):
         del key_layer
 
         if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+            # Apply the attention mask is (precomputed for all layers in RobertaModel forward() function)
             attention_scores = attention_scores + attention_mask
             del attention_mask
 
@@ -178,7 +177,7 @@ class CausalAttentionProduct(nn.Module):
         del key_layer
 
         if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in BertModel forward() function)
+            # Apply the attention mask is (precomputed for all layers in RobertaModel forward() function)
             attention_scores = attention_scores + attention_mask
 
             # Add causal mask
@@ -338,7 +337,7 @@ class LSGAttentionProduct(nn.Module):
 
         # Pad before block reshaping
         if is_attn_mask:
-            pad_value = torch.finfo(hidden_states.dtype).min 
+            pad_value = torch.finfo(hidden_states.dtype).min  
             hidden_states = hidden_states.transpose(-1, -2)
         else: 
             pad_value = 0
@@ -381,7 +380,7 @@ class LSGAttentionProduct(nn.Module):
         return x.reshape(*x.size()[:-2], n_blocks, -1, d)
 
 
-class LSGBertEmbeddings(BertEmbeddings):
+class LSGRobertaEmbeddings(RobertaEmbeddings):
 
     def __init__(self, config):
         super().__init__(config)
@@ -395,27 +394,25 @@ class LSGBertEmbeddings(BertEmbeddings):
 
     def forward(
         self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None, past_key_values_length=0
-    ):
+        ):
+        if position_ids is None:
+            if input_ids is not None:
+                # Create the position ids from the input token ids. Any padded tokens remain padded.
+                position_ids = create_position_ids_from_input_ids(
+                    input_ids, self.padding_idx, past_key_values_length
+                ).to(input_ids.device)
+            else:
+                position_ids = self.create_position_ids_from_inputs_embeds(inputs_embeds)
+
         if input_ids is not None:
             input_shape = input_ids.size()
         else:
             input_shape = inputs_embeds.size()[:-1]
 
-        seq_length = input_shape[1]
+        seq_length = input_shape[-1]
 
-        if position_ids is None:
-            position_ids = self.position_ids[:, past_key_values_length : seq_length + past_key_values_length]
-
-        # Setting the token_type_ids to the registered buffer in constructor where it is all zeros, which usually occurs
-        # when its auto-generated, registered buffer helps users when tracing the model without passing token_type_ids, solves
-        # issue #5664
         if token_type_ids is None:
-            if hasattr(self, "token_type_ids"):
-                buffered_token_type_ids = self.token_type_ids[:, :seq_length]
-                buffered_token_type_ids_expanded = buffered_token_type_ids.expand(input_shape[0], seq_length)
-                token_type_ids = buffered_token_type_ids_expanded
-            else:
-                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
+            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
 
         if inputs_embeds is None:
             inputs_embeds = self.word_embeddings(input_ids)
@@ -437,6 +434,41 @@ class LSGBertEmbeddings(BertEmbeddings):
         embeddings = self.LayerNorm(embeddings)
         embeddings = self.dropout(embeddings)
         return embeddings
+
+
+class LSGRobertaSelfOutput(RobertaSelfOutput):
+    
+    def __init__(self, config):
+        super().__init__(config)
+
+
+class LSGAttention(RobertaAttention):
+
+    def __init__(self, config):
+        
+        nn.Module.__init__(self)
+        
+        self.self = LSGSelfAttention(config)
+        self.output = LSGRobertaSelfOutput(config)
+        self.pruned_heads = set()
+
+
+class LSGRobertaIntermediate(RobertaIntermediate):
+
+    def __init__(self, config):
+        super().__init__(config)
+
+
+class LSGRobertaOutput(RobertaOutput):
+
+    def __init__(self, config):
+        super().__init__(config)
+
+
+class LSGRobertaPooler(RobertaPooler):
+    
+    def __init__(self, config):
+        super().__init__(config)
 
 
 class LSGSelfAttention(BaseSelfAttention):
@@ -862,36 +894,7 @@ class LSGSelfAttention(BaseSelfAttention):
         return x.reshape(n, h, -1, chunk_size, d)
 
 
-class LSGBertSelfOutput(BertSelfOutput):
-    
-    def __init__(self, config):
-        super().__init__(config)
-
-
-class LSGAttention(BertAttention):
-
-    def __init__(self, config):
-
-        nn.Module.__init__(self)
-        
-        self.self = LSGSelfAttention(config)
-        self.output = LSGBertSelfOutput(config)
-        self.pruned_heads = set()
-
-
-class LSGBertIntermediate(BertIntermediate):
-
-    def __init__(self, config):
-        super().__init__(config)
-
-
-class LSGBertOutput(BertOutput):
-
-    def __init__(self, config):
-        super().__init__(config)
-
-
-class LSGBertLayer(BertLayer):
+class LSGRobertaLayer(RobertaLayer):
     
     def __init__(self, config):
 
@@ -903,106 +906,49 @@ class LSGBertLayer(BertLayer):
         self.is_decoder = config.is_decoder
         self.add_cross_attention = config.add_cross_attention
         if self.add_cross_attention:
-            if not self.is_decoder:
-                assert self.is_decoder, f"{self} should be used as a decoder model if cross attention is added"
+            assert self.is_decoder, f"{self} should be used as a decoder model if cross attention is added"
             self.crossattention = LSGAttention(config)
-        self.intermediate = LSGBertIntermediate(config)
-        self.output = LSGBertOutput(config)
+        self.intermediate = LSGRobertaIntermediate(config)
+        self.output = LSGRobertaOutput(config)
 
 
-class LSGBertEncoder(BertEncoder):
+class LSGRobertaEncoder(RobertaEncoder):
 
     def __init__(self, config):
 
         nn.Module.__init__(self)
 
         self.config = config
-        self.layer = nn.ModuleList([LSGBertLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layer = nn.ModuleList([LSGRobertaLayer(config) for _ in range(config.num_hidden_layers)])
         self.gradient_checkpointing = False
 
 
-class LSGBertPooler(BertPooler):
-    
-    def __init__(self, config):
-        super().__init__(config)
-
-
-class LSGBertPredictionHeadTransform(BertPredictionHeadTransform):
-
-    def __init__(self, config):
-        super().__init__(config)
-
-
-class LSGBertLMPredictionHead(BertLMPredictionHead):
-
-    def __init__(self, config):
-
-        nn.Module.__init__(self)
-        
-        self.transform = LSGBertPredictionHeadTransform(config)
-
-        # The output weights are the same as the input embeddings, but there is
-        # an output-only bias for each token.
-        self.decoder = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-
-        self.bias = nn.Parameter(torch.zeros(config.vocab_size))
-
-        # Need a link between the two variables so that the bias is correctly resized with `resize_token_embeddings`
-        self.decoder.bias = self.bias
-
-
-class LSGBertOnlyMLMHead(BertOnlyMLMHead):
-    """LSG Head for masked language modeling."""
-
-    def __init__(self, config):
-        
-        nn.Module.__init__(self)
-
-        self.predictions = LSGBertLMPredictionHead(config)
-
-
-class LSGBertOnlyNSPHead(BertOnlyNSPHead):
-
-    def __init__(self, config):
-        super().__init__(config)
-
-
-class LSGBertPreTrainingHeads(BertPreTrainingHeads):
-
-    def __init__(self, config):
-        
-        nn.Module.__init__(self)
-    
-        self.predictions = BertLMPredictionHead(config)
-        self.seq_relationship = nn.Linear(config.hidden_size, 2)
-
-
-class LSGBertPreTrainedModel(BertPreTrainedModel):
+class LSGRobertaPreTrainedModel(RobertaPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
     models.
     """
 
-    config_class = LSGBertConfig
+    config_class = LSGXLMRobertaConfig
 
     def _set_gradient_checkpointing(self, module, value=False):
-        if isinstance(module, (BertEncoder, LSGBertEncoder)):
+        if isinstance(module, (RobertaEncoder, LSGRobertaEncoder)):
             module.gradient_checkpointing = value
 
 
-class LSGBertModel(LSGBertPreTrainedModel, BertModel):
+class LSGXLMRobertaModel(LSGRobertaPreTrainedModel, RobertaModel):
     """
-    This class overrides :class:`~transformers.BertModel`. Please check the superclass for the appropriate
+    This class overrides :class:`~transformers.RobertaModel`. Please check the superclass for the appropriate
     documentation alongside usage examples.
     """
 
-    config_class = LSGBertConfig
+    config_class = LSGXLMRobertaConfig
 
-    def __init__(self, config, add_pooling_layer=True):
+
+    def __init__(self, config, add_pooling_layer=False):
         
-        LSGBertPreTrainedModel.__init__(self, config)
+        LSGRobertaPreTrainedModel.__init__(self, config)
 
-        self.config = config
         assert hasattr(config, "num_global_tokens")
         self.num_global_tokens = config.num_global_tokens
         self.pad_idx = config.pad_token_id
@@ -1013,9 +959,9 @@ class LSGBertModel(LSGBertPreTrainedModel, BertModel):
         self.mask_first_token = config.mask_first_token
         self.pool_with_global = config.pool_with_global
 
-        self.embeddings = LSGBertEmbeddings(config)
-        self.encoder = LSGBertEncoder(config)
-        self.pooler = LSGBertPooler(config) if add_pooling_layer else None
+        self.embeddings = LSGRobertaEmbeddings(config)
+        self.encoder = LSGRobertaEncoder(config)
+        self.pooler = LSGRobertaPooler(config) if add_pooling_layer else None
 
         if config.add_cross_attention:
             logger.warning(
@@ -1049,8 +995,6 @@ class LSGBertModel(LSGBertPreTrainedModel, BertModel):
             attention_mask = torch.ones(n, t, device=inputs_.device, dtype=inputs_.dtype)
         if self.mask_first_token:
             attention_mask[:,0] = 0
-        if token_type_ids is None:
-            token_type_ids = torch.zeros(n, t, device=inputs_.device).long()
             
         b = self.block_size * 2
         pad = t % self.block_size
@@ -1064,8 +1008,9 @@ class LSGBertModel(LSGBertPreTrainedModel, BertModel):
                 inputs_embeds = torch.nn.functional.pad(inputs_embeds.transpose(-1, -2), (0, pad_length), value=0.).transpose(-1, -2)
 
             attention_mask = torch.nn.functional.pad(attention_mask, (0, pad_length), value=0)
-            token_type_ids = torch.nn.functional.pad(token_type_ids, (0, pad_length), value=0)
 
+            if token_type_ids is not None:
+                token_type_ids = torch.nn.functional.pad(token_type_ids, (0, pad_length), value=0)
             if position_ids is not None:
                 position_ids = torch.nn.functional.pad(position_ids, (0, pad_length), value=0)
         
@@ -1100,7 +1045,6 @@ class LSGBertModel(LSGBertPreTrainedModel, BertModel):
             context = context[:, :t]
         
         encoder_outputs.last_hidden_state = context
-
         sequence_output = encoder_outputs[0]
         pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
 
@@ -1115,7 +1059,7 @@ class LSGBertModel(LSGBertPreTrainedModel, BertModel):
             attentions=encoder_outputs.attentions,
             cross_attentions=encoder_outputs.cross_attentions,
         )
-        
+    
     def get_extended_attention_mask(self, attention_mask, input_shape, device=None):
 
         # Do not rely on original triangular mask from BERT/RoBERTa for causalLM
@@ -1134,143 +1078,132 @@ class LSGBertModel(LSGBertPreTrainedModel, BertModel):
         return extended_attention_mask
 
 
-class LSGBertForPreTraining(LSGBertPreTrainedModel):
+class LSGXLMRobertaForCausalLM(LSGRobertaPreTrainedModel, RobertaForCausalLM):
 
-    def __init__(self, config):
-        
-        super().__init__(config)
-
-        self.bert = LSGBertModel(config)
-        self.cls = LSGBertPreTrainingHeads(config)
-        
-        # Initialize weights and apply final processing
-        self.post_init()
-
-
-class LSGBertLMHeadModel(BertLMHeadModel):
-
+    config_class = LSGXLMRobertaConfig
+    _keys_to_ignore_on_save = [r"lm_head.decoder.weight", r"lm_head.decoder.bias"]
+    _keys_to_ignore_on_load_missing = [r"position_ids", r"lm_head.decoder.weight", r"lm_head.decoder.bias"]
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
-    _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
 
     def __init__(self, config):
-        
-        BertPreTrainedModel.__init__(self, config)
+
+        LSGRobertaPreTrainedModel.__init__(self, config)
 
         if not config.is_decoder:
-            logger.warning("If you want to use `BertLMHeadModel` as a standalone, add `is_decoder=True.`")
+            logger.warning("If you want to use `LSGRobertaLMHeadModel` as a standalone, add `is_decoder=True.`")
 
-        self.bert = LSGBertModel(config, add_pooling_layer=False)
-        self.cls = LSGBertOnlyMLMHead(config)
+        self.roberta = LSGXLMRobertaModel(config, add_pooling_layer=False)
+        self.lm_head = LSGRobertaLMHead(config)
+
+        # The LM head weights require special treatment only when they are tied with the word embeddings
+        self.update_keys_to_ignore(config, ["lm_head.decoder.weight"])
 
         # Initialize weights and apply final processing
         self.post_init()
 
 
-class LSGBertForMaskedLM(LSGBertPreTrainedModel, BertForMaskedLM):
+class LSGXLMRobertaForMaskedLM(LSGRobertaPreTrainedModel, RobertaForMaskedLM):
     """
-    This class overrides :class:`~transformers.BertForMaskedLM`. Please check the superclass for the appropriate
+    This class overrides :class:`~transformers.RobertaForMaskedLM`. Please check the superclass for the appropriate
     documentation alongside usage examples.
     """
-
-    config_class = LSGBertConfig
+    config_class = LSGXLMRobertaConfig
+    _keys_to_ignore_on_save = [r"lm_head.decoder.weight", r"lm_head.decoder.bias"]
+    _keys_to_ignore_on_load_missing = [r"position_ids", r"lm_head.decoder.weight", r"lm_head.decoder.bias"]
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
-    _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
 
     def __init__(self, config):
 
-        LSGBertPreTrainedModel.__init__(self, config)
+        LSGRobertaPreTrainedModel.__init__(self, config)
 
         if config.is_decoder:
             logger.warning(
-                "If you want to use `LSGBertForMaskedLM` make sure `config.is_decoder=False` for "
+                "If you want to use `LSGRobertaForMaskedLM` make sure `config.is_decoder=False` for "
                 "bi-directional self-attention."
             )
 
-        self.bert = LSGBertModel(config, add_pooling_layer=False)
-        self.cls = LSGBertOnlyMLMHead(config)
+        self.roberta = LSGXLMRobertaModel(config, add_pooling_layer=False)
+        self.lm_head = LSGRobertaLMHead(config)
+        
+        # The LM head weights require special treatment only when they are tied with the word embeddings
+        self.update_keys_to_ignore(config, ["lm_head.decoder.weight"])
 
         # Initialize weights and apply final processing
         self.post_init()
 
 
-class LSGBertForNextSentencePrediction(LSGBertPreTrainedModel, BertForNextSentencePrediction):
+class LSGRobertaLMHead(RobertaLMHead):
+    """LSG Head for masked language modeling."""
 
     def __init__(self, config):
-
-        LSGBertPreTrainedModel.__init__(self, config)
-
-        self.bert = LSGBertModel(config)
-        self.cls = LSGBertOnlyNSPHead(config)
-        
-        # Initialize weights and apply final processing
-        self.post_init()
+        super().__init__(config)
 
 
-class LSGBertForSequenceClassification(LSGBertPreTrainedModel, BertForSequenceClassification):
+class LSGXLMRobertaForSequenceClassification(LSGRobertaPreTrainedModel, RobertaForSequenceClassification):
     """
-    This class overrides :class:`~transformers.BertForSequenceClassification`. Please check the superclass for the
+    This class overrides :class:`~transformers.RobertaForSequenceClassification`. Please check the superclass for the
     appropriate documentation alongside usage examples.
     """
-
-    config_class = LSGBertConfig
+    config_class = LSGXLMRobertaConfig
+    _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config):
         
-        LSGBertPreTrainedModel.__init__(self, config)
+        LSGRobertaPreTrainedModel.__init__(self, config)
 
         self.num_labels = config.num_labels
         self.config = config
 
-        self.bert = LSGBertModel(config)
-        classifier_dropout = (
-            config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
-        )
-        self.dropout = nn.Dropout(classifier_dropout)
-        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+        self.roberta = LSGXLMRobertaModel(config, add_pooling_layer=False)
+        self.classifier = LSGRobertaClassificationHead(config)
 
         # Initialize weights and apply final processing
         self.post_init()
 
+
+class LSGRobertaClassificationHead(RobertaClassificationHead):
+    """Head for sentence-level classification tasks."""
+
+    def __init__(self, config):
+        super().__init__(config)
+
         
-class LSGBertForMultipleChoice(LSGBertPreTrainedModel, BertForMultipleChoice):
+class LSGXLMRobertaForMultipleChoice(LSGRobertaPreTrainedModel, RobertaForMultipleChoice):
     """
-    This class overrides :class:`~transformers.BertForMultipleChoice`. Please check the superclass for the
+    This class overrides :class:`~transformers.RobertaForMultipleChoice`. Please check the superclass for the
     appropriate documentation alongside usage examples.
     """
-
-    config_class = LSGBertConfig
+    config_class = LSGXLMRobertaConfig
+    _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config):
         
-        LSGBertPreTrainedModel.__init__(self, config)
+        LSGRobertaPreTrainedModel.__init__(self, config)
 
-        self.bert = LSGBertModel(config)
-        classifier_dropout = (
-            config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
-        )
-        self.dropout = nn.Dropout(classifier_dropout)
+        self.roberta = LSGXLMRobertaModel(config)
+        self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
 
         # Initialize weights and apply final processing
         self.post_init()
 
 
-class LSGBertForTokenClassification(LSGBertPreTrainedModel, BertForTokenClassification):
+class LSGXLMRobertaForTokenClassification(LSGRobertaPreTrainedModel, RobertaForTokenClassification):
     """
-    This class overrides :class:`~transformers.BertForTokenClassification`. Please check the superclass for the
+    This class overrides :class:`~transformers.RobertaForTokenClassification`. Please check the superclass for the
     appropriate documentation alongside usage examples.
     """
-
-    config_class = LSGBertConfig
+    config_class = LSGXLMRobertaConfig
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
+    _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config):
         
-        LSGBertPreTrainedModel.__init__(self, config)
+        LSGRobertaPreTrainedModel.__init__(self, config)
 
         self.num_labels = config.num_labels
 
-        self.bert = LSGBertModel(config, add_pooling_layer=False)
+        self.roberta = LSGXLMRobertaModel(config, add_pooling_layer=False)
         classifier_dropout = (
             config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
         )
@@ -1281,22 +1214,22 @@ class LSGBertForTokenClassification(LSGBertPreTrainedModel, BertForTokenClassifi
         self.post_init()
 
 
-class LSGBertForQuestionAnswering(LSGBertPreTrainedModel, BertForQuestionAnswering):
+class LSGXLMRobertaForQuestionAnswering(LSGRobertaPreTrainedModel, RobertaForQuestionAnswering):
     """
-    This class overrides :class:`~transformers.BertForQuestionAnswering`. Please check the superclass for the
+    This class overrides :class:`~transformers.RobertaForQuestionAnswering`. Please check the superclass for the
     appropriate documentation alongside usage examples.
     """
-
-    config_class = LSGBertConfig
+    config_class = LSGXLMRobertaConfig
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
+    _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config):
         
-        LSGBertPreTrainedModel.__init__(self, config)
-
+        LSGRobertaPreTrainedModel.__init__(self, config)
+        
         self.num_labels = config.num_labels
 
-        self.bert = LSGBertModel(config, add_pooling_layer=False)
+        self.roberta = LSGXLMRobertaModel(config, add_pooling_layer=False)
         self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
 
         # Initialize weights and apply final processing
@@ -1308,7 +1241,7 @@ def str_to_class(classname):
 
 # Register model in Auto API
 try:
-    LSGBertConfig.register_for_auto_class()
+    LSGXLMRobertaConfig.register_for_auto_class()
     for key, value in AUTO_MAP.items():
         str_to_class(value.split(".")[-1]).register_for_auto_class(key)
 except:

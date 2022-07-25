@@ -19,8 +19,10 @@ time_it_base.py
 time_it_ed.py
 convert_utils.py
 test_pipeline_ed.py
-convert_mbart_checkpoint.py
 mbart/*
+convert_mbart_checkpoint.py
+xlm/*
+convert_xlm_checkpoint.py
 _old/*
 */__pycache__/*
 bart/modeling_lsg_bart2.py
@@ -28,3 +30,4 @@ convert3.sh
 test_modules.py
 bart/modeling_lsg_bart_old.py
 camembert_test/*
+test_class.py

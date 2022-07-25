@@ -3,7 +3,6 @@ import torch
 from transformers.models.bart.modeling_bart import *
 from transformers.models.bart.modeling_bart import _expand_mask
 import torch.nn as nn
-from torch.nn import BCEWithLogitsLoss
 import sys
 
 AUTO_MAP = {
@@ -16,7 +15,7 @@ AUTO_MAP = {
 
 class LSGMBartConfig(BartConfig):
     """
-    This class overrides :class:`~transformers.RobertaConfig`. Please check the superclass for the appropriate
+    This class overrides :class:`~transformers.BartConfig`. Please check the superclass for the appropriate
     documentation alongside usage examples.
     """
 
@@ -267,7 +266,7 @@ class LSGAttentionProduct(nn.Module):
 
         # Pad before block reshaping
         if is_attn_mask:
-            pad_value = -10000  
+            pad_value = torch.finfo(hidden_states.dtype).min
             hidden_states = hidden_states.transpose(-1, -2)
         else: 
             pad_value = 0
@@ -296,7 +295,7 @@ class LSGAttentionProduct(nn.Module):
 
         # Pad before block reshaping
         if is_attn_mask:
-            pad_value = -10000  
+            pad_value = torch.finfo(hidden_states.dtype).min  
             hidden_states = hidden_states.transpose(-1, -2)
         else: 
             pad_value = 0
@@ -425,7 +424,7 @@ class LSGMBartEncoderAttention(BaseSelfAttention):
         keys = keys.sum(dim=-2) / (mask + 1e-6)
         values = values.sum(dim=-2) / (mask + 1e-6)
 
-        mask = - (1. - mask.clamp(0, 1)) * 1e4
+        mask = (1. - mask.clamp(0, 1)) * torch.finfo(mask.dtype).min
         return keys.reshape(n, h, -1, d), values.reshape(n, h, -1, d), mask.expand(-1, h, -1, -1).transpose(-1, -2)
 
     def get_sparse_tokens_with_stride(self, keys, values, mask):
@@ -490,7 +489,7 @@ class LSGMBartEncoderAttention(BaseSelfAttention):
         keys /= mask + 1e-8
         values /= mask + 1e-8
 
-        mask = -10000 * (1. - mask.clamp(0, 1))
+        mask = (1. - mask.clamp(0, 1)) * torch.finfo(mask.dtype).min
 
         return keys.reshape(n, h, -1, d), values.reshape(n, h, -1, d), mask.transpose(-1, -2).reshape(n, h, 1, -1)
 
@@ -739,7 +738,7 @@ class LSGMBartEncoder(LSGMBartPretrainedModel, BartEncoder):
         n, t = inputs_.size()[:2]
 
         if attention_mask is None:
-            attention_mask = torch.ones(n, t, device=inputs_.device)
+            attention_mask = torch.ones(n, t, device=inputs_.device, dtype=inputs_.dtype)
         if self.mask_first_token:
             attention_mask[:,0] = 0
             
@@ -891,7 +890,7 @@ class LSGMBartEncoder(LSGMBartPretrainedModel, BartEncoder):
         )
 
 
-class LSGMBartDecoder(BartDecoder, LSGMBartPretrainedModel):
+class LSGMBartDecoder(LSGMBartPretrainedModel, BartDecoder):
     """
     Transformer decoder consisting of *config.decoder_layers* layers. Each layer is a :class:`LSGMBartDecoderLayer`
     Args:
@@ -1032,7 +1031,7 @@ class LSGMBartModel(LSGMBartPretrainedModel, BartModel):
         )
 
 
-class LSGMBartForConditionalGeneration(BartForConditionalGeneration, LSGMBartPretrainedModel):
+class LSGMBartForConditionalGeneration(LSGMBartPretrainedModel, BartForConditionalGeneration):
     
     base_model_prefix = "model"
     _keys_to_ignore_on_load_missing = [r"final_logits_bias", r"lm_head\.weight"]
@@ -1048,7 +1047,7 @@ class LSGMBartForConditionalGeneration(BartForConditionalGeneration, LSGMBartPre
         self.post_init()
 
 
-class LSGMBartForSequenceClassification(BartForSequenceClassification, LSGMBartPretrainedModel):
+class LSGMBartForSequenceClassification(LSGMBartPretrainedModel, BartForSequenceClassification):
 
     def __init__(self, config: LSGMBartConfig, **kwargs):
 
@@ -1064,7 +1063,7 @@ class LSGMBartForSequenceClassification(BartForSequenceClassification, LSGMBartP
         self.model._init_weights(self.classification_head.out_proj)
 
 
-class LSGMBartForQuestionAnswering(BartForQuestionAnswering, LSGMBartPretrainedModel):
+class LSGMBartForQuestionAnswering(LSGMBartPretrainedModel, BartForQuestionAnswering):
 
     def __init__(self, config: LSGMBartConfig):
 
@@ -1093,7 +1092,7 @@ class LSGMBartDecoderWrapper(LSGMBartPretrainedModel):
         return self.decoder(*args, **kwargs)
 
 
-class LSGMBartForCausalLM(BartForCausalLM, LSGMBartPretrainedModel):
+class LSGMBartForCausalLM(LSGMBartPretrainedModel, BartForCausalLM):
 
     def __init__(self, config: LSGMBartConfig):
 
