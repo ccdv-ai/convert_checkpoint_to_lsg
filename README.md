@@ -7,14 +7,16 @@ Transformers >= 4.18.0
 
 This script converts any BERT/RoBERTa/CamemBERT/XLM-Roberta/DistilBert/BART/Pegasus checkpoint (from HuggingFace hub, [see](https://huggingface.co/ccdv)) to its LSG variant to handle long sequences. 
 
-Either use to convert the model: 
-* `convert_bert_checkpoint.py`
-* `convert_roberta_checkpoint.py`
-* `convert_camembert_checkpoint.py`
-* `convert_xlm_roberta_checkpoint.py`
-* `convert_distilbert_checkpoint.py`
-* `convert_bart_checkpoint.py`
-* `convert_pegasus_checkpoint.py`
+Use `convert_checkpoint.py`. Available model_type (inside config.json): 
+* "bart" (encoder converted only)
+* "barthez" (encoder converted only)
+* "bert"
+* "camembert"
+* "distilbert"
+* "mbart" (not tested extensively, encoder converted only)
+* "pegasus" (not tested extensively, encoder converted only)
+* "roberta"
+* "xlm-roberta"
 
 Model architecture is infered from config but you can specify a different one if the config is wrong (can happen for BART models), see  `python convert_bert_checkpoint.py --help`
 
@@ -29,7 +31,7 @@ export MODEL_TO_CONVERT=bert-base-uncased
 export MODEL_NAME=lsg-bert-base-uncased
 export MAX_LENGTH=4096
 
-python convert_bert_checkpoint.py \
+python convert_checkpoint.py \
     --initial_model $MODEL_TO_CONVERT \
     --model_name $MODEL_NAME \
     --max_sequence_length $MAX_LENGTH
@@ -44,7 +46,7 @@ export MODEL_TO_CONVERT=roberta-base
 export MODEL_NAME=lsg-roberta-base
 export MAX_LENGTH=4096
 
-python convert_roberta_checkpoint.py \
+python convert_checkpoint.py \
     --initial_model $MODEL_TO_CONVERT \
     --model_name $MODEL_NAME \
     --model_kwargs "{'sparsity_type': 'lsh', 'block_size': 32}"

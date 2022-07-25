@@ -931,7 +931,7 @@ class LSGDistilBertModel(LSGDistilBertPreTrainedModel, DistilBertModel):
         assert hasattr(config, "block_size") and hasattr(config, "adaptive")
         self.block_size = config.block_size
         self.adaptive = config.adaptive
-        self.mask_first_token = config.first_token
+        self.mask_first_token = config.mask_first_token
         self.pool_with_global = config.pool_with_global
 
         # Initialize weights and apply final processing
