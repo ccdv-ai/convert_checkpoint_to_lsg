@@ -5,7 +5,16 @@ Under review
 
 Transformers >= 4.18.0
 
-This script converts any BERT/RoBERTa/CamemBERT/XLM-Roberta/DistilBert/BART/Pegasus checkpoint (from HuggingFace hub, [see](https://huggingface.co/ccdv)) to its LSG variant to handle long sequences. Use either `convert_bert_checkpoint.py`/`convert_roberta_checkpoint.py`/`convert_camembert_checkpoint.py`/`convert_xlm_roberta_checkpoint.py`/`convert_distilbert_checkpoint.py`/`convert_bart_checkpoint.py`/`convert_pegasus_checkpoint.py` to convert the model.
+This script converts any BERT/RoBERTa/CamemBERT/XLM-Roberta/DistilBert/BART/Pegasus checkpoint (from HuggingFace hub, [see](https://huggingface.co/ccdv)) to its LSG variant to handle long sequences. 
+
+Either use to convert the model: 
+* `convert_bert_checkpoint.py`
+* `convert_roberta_checkpoint.py`
+* `convert_camembert_checkpoint.py`
+* `convert_xlm_roberta_checkpoint.py`
+* `convert_distilbert_checkpoint.py`
+* `convert_bart_checkpoint.py`
+* `convert_pegasus_checkpoint.py`
 
 Model architecture is infered from config but you can specify a different one if the config is wrong (can happen for BART models), see  `python convert_bert_checkpoint.py --help`
 
