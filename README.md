@@ -49,7 +49,7 @@ export MAX_LENGTH=4096
 python convert_checkpoint.py \
     --initial_model $MODEL_TO_CONVERT \
     --model_name $MODEL_NAME \
-    --model_kwargs "{'sparsity_type': 'lsh', 'block_size': 32}"
+    --model_kwargs "{'mask_first_token': true, 'sparsity_type': 'lsh', 'block_size': 32}"
     --max_sequence_length $MAX_LENGTH
 ```
 
