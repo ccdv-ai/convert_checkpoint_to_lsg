@@ -3,7 +3,7 @@ Under review
 
 Requires `transformers >= 4.18.0`
 
-This script converts any BERT/RoBERTa/CamemBERT/XLM-Roberta/DistilBert/BART/Pegasus checkpoint (from HuggingFace hub, [see](https://huggingface.co/ccdv)) to its LSG variant to handle long sequences.
+This script converts any AlBERT/BERT/RoBERTa/CamemBERT/XLM-Roberta/DistilBert/BART/Pegasus checkpoint (from HuggingFace hub, [see](https://huggingface.co/ccdv)) to its LSG variant to handle long sequences.
 
 * [Conversion](#convert-checkpoint-to-lsg)
 * [Usage](#model-usage)
@@ -14,13 +14,14 @@ This script converts any BERT/RoBERTa/CamemBERT/XLM-Roberta/DistilBert/BART/Pega
 # Convert checkpoint to LSG 
 
 Use `convert_checkpoint.py` with these model types (model_type from config.json): 
-* "bart" (encoder converted only)
-* "barthez" (encoder converted only)
+* "albert"
+* "bart" (encoder attention modified only)
+* "barthez" (encoder attention modified only)
 * "bert"
 * "camembert"
 * "distilbert"
-* "mbart" (not tested extensively, encoder converted only)
-* "pegasus" (not tested extensively, encoder converted only)
+* "mbart" (not tested extensively, encoder attention modified only)
+* "pegasus" (not tested extensively, encoder attention modified only)
 * "roberta"
 * "xlm-roberta"
 

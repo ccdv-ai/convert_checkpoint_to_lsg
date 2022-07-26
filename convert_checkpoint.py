@@ -10,6 +10,7 @@ from transformers import (
     set_seed,
 )
 
+from convert_models.albert.convert_albert_checkpoint import *
 from convert_models.bart.convert_bart_checkpoint import *
 from convert_models.barthez.convert_barthez_checkpoint import *
 from convert_models.bert.convert_bert_checkpoint import *
@@ -22,6 +23,7 @@ from convert_models.xlm_roberta.convert_xlm_roberta_checkpoint import *
 
 
 _AUTH_MODELS = {
+    "albert": AlbertConversionScript,
     "bart": BartConversionScript,
     "barthez": BarthezConversionScript,
     "bert": BertConversionScript,

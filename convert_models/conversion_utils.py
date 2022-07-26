@@ -48,9 +48,9 @@ class ConversionScript():
 
     def process(self):
         
-        _architecture, _model = self.get_architecture()
-        is_base_architecture, is_lsg, keep_first_global = self.get_additional_params(_architecture)
-        model, tokenizer = self.get_model(_architecture, _model)
+        (lsg_architecture, lsg_model), initial_architecture = self.get_architecture()
+        is_base_architecture, is_lsg, keep_first_global = self.get_additional_params(lsg_architecture, initial_architecture)
+        model, tokenizer = self.get_model(lsg_architecture, lsg_model)
         model, tokenizer = self.update_config(model, tokenizer)
 
         # Get the module prefix to update
@@ -85,21 +85,21 @@ class ConversionScript():
 
         return self.validate_architecture(self._DEFAULT_ARCHITECTURE_TYPE)
 
-    def validate_architecture(self, model_type):
-        _architecture = self._ARCHITECTURE_TYPE_DICT.get(model_type, None)
+    def validate_architecture(self, architecture):
+        _architecture = self._ARCHITECTURE_TYPE_DICT.get(architecture, None)
 
         s = "\n * " + "\n * ".join([k for k in self._ARCHITECTURE_TYPE_DICT.keys()])
         assert _architecture is not None, f"Provided/config architecture is wrong, make sure it is in: {s}"
-        return _architecture
+        return _architecture, architecture
 
-    def get_model(self, _architecture, _model):
+    def get_model(self, lsg_architecture, lsg_model):
         config = self._CONFIG_MODULE.from_pretrained(
             self.initial_model, 
-            architectures=_architecture, 
+            architectures=lsg_architecture, 
             trust_remote_code=True, 
             **json.loads(self.model_kwargs.replace("'", "\""))
             )
-        model = _model.from_pretrained(self.initial_model, use_auth_token=True, config=config)
+        model = lsg_model.from_pretrained(self.initial_model, use_auth_token=True, config=config)
         tokenizer = AutoTokenizer.from_pretrained(self.initial_model, use_auth_token=True, trust_remote_code=True)
         return model, tokenizer
 
@@ -114,13 +114,13 @@ class ConversionScript():
         model.config._name_or_path = self.model_name
         return model, tokenizer
 
-    def get_additional_params(self, _architecture):
+    def get_additional_params(self, _architecture, initial_architecture):
 
         # Hack because of architecture
         is_base_architecture = True if _architecture in [self._BASE_ARCHITECTURE_TYPE, "LSG" + self._BASE_ARCHITECTURE_TYPE] else False
 
         # Check if it is LSG architecture
-        if vars(self.config).get("base_model_prefix", None) == "lsg" and "LSG" in _architecture:
+        if vars(self.config).get("base_model_prefix", None) == "lsg" or "LSG" in initial_architecture:
             is_lsg_architecture = True
         else: 
             is_lsg_architecture = False
