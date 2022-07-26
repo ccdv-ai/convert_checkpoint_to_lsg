@@ -21,7 +21,7 @@ Use `convert_checkpoint.py`. Available model_type (inside config.json):
 Model architecture is infered from config but you can specify a different one if the config is wrong (can happen for BART models), see  `python convert_checkpoint.py --help`
 
 
-BERT example (BertForPretraining):
+BERT example (`BertForPretraining`):
 
 ```bash
 git clone https://github.com/ccdv-ai/convert_checkpoint_to_lsg.git
@@ -37,7 +37,7 @@ python convert_checkpoint.py \
     --max_sequence_length $MAX_LENGTH
 ```
 
-RoBERTa example (RobertaForMaskedLM):
+RoBERTa example (from `RobertaForMaskedLM` to `RobertaForSequenceClassification`):
 ```bash
 git clone https://github.com/ccdv-ai/convert_checkpoint_to_lsg.git
 cd convert_checkpoint_to_lsg
