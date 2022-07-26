@@ -92,6 +92,12 @@ class FileArguments:
         },
     )
 
+    use_token_ids: bool = field(
+        default=True,
+        metadata={
+            "help": "Add token_type_ids (0) to global embeddings if the model allows it"}
+    )
+
     seed: int = field(
         default=123,
         metadata={
@@ -115,22 +121,23 @@ def main():
     set_seed(args.seed)
     
     # Get config
-    initial_config = AutoConfig.from_pretrained(args.initial_model, trust_remote_code=True, use_auth_token=True)
-    model_type = initial_config.model_type
+    config = AutoConfig.from_pretrained(args.initial_model, trust_remote_code=True, use_auth_token=True)
+    model_type = config.model_type
 
     if model_type in _AUTH_MODELS.keys():
         converter = _AUTH_MODELS[model_type](
-            args.initial_model, 
-            args.model_name, 
-            args.max_sequence_length, 
-            args.architecture, 
-            args.random_global_init, 
-            args.global_positional_stride, 
-            args.keep_first_global_token, 
-            args.resize_lsg, 
-            args.model_kwargs, 
-            initial_config,
-            args.seed
+            initial_model=args.initial_model, 
+            model_name=args.model_name, 
+            max_sequence_length=args.max_sequence_length, 
+            architecture=args.architecture, 
+            random_global_init=args.random_global_init, 
+            global_positional_stride=args.global_positional_stride, 
+            keep_first_global_token=args.keep_first_global_token, 
+            resize_lsg=args.resize_lsg, 
+            model_kwargs=args.model_kwargs, 
+            use_token_ids=args.use_token_ids,
+            config=config,
+            seed=args.seed
             )
         converter.process()
         

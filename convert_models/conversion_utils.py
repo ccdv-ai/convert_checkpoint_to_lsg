@@ -26,6 +26,7 @@ class ConversionScript():
         keep_first_global_token, 
         resize_lsg, 
         model_kwargs, 
+        use_token_ids,
         config,
         seed
         ):
@@ -39,6 +40,7 @@ class ConversionScript():
         self.keep_first_global_token = keep_first_global_token
         self.resize_lsg = resize_lsg
         self.model_kwargs = model_kwargs
+        self.use_token_ids = use_token_ids
         self.config = config
 
     def save(self, model, tokenizer):

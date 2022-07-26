@@ -61,6 +61,7 @@ class BertConversionScript(ConversionScript):
         from torch.distributions.multivariate_normal import MultivariateNormal
 
         u = module_prefix.embeddings.word_embeddings.weight.clone()
+
         cov = torch.cov(u.T)
         m = MultivariateNormal(u.mean(dim=0), cov)
         w = m.sample((512,))
@@ -68,6 +69,11 @@ class BertConversionScript(ConversionScript):
 
         positions = module_prefix.embeddings.position_embeddings.weight.clone()
         positions = self.order_positions(positions, stride)
+
+        if self.use_token_ids:
+            token_ids = module_prefix.embeddings.token_type_embeddings.weight.clone()
+            positions += token_ids[0].unsqueeze(0)
+            w[0] = u[bos_id] + token_ids[0]
 
         if keep_first_global:
             module_prefix.embeddings.global_embeddings.weight.data[1:] = (w + positions)[1:]
@@ -82,7 +88,11 @@ class BertConversionScript(ConversionScript):
 
         positions[0] += u[bos_id]
         positions[1:] += u[mask_id].unsqueeze(0)
-        
+
+        if self.use_token_ids:
+            token_ids = module_prefix.embeddings.token_type_embeddings.weight.clone()
+            positions += token_ids[0].unsqueeze(0)
+
         if keep_first_global:
             module_prefix.embeddings.global_embeddings.weight.data[1:] = positions[1:]
         else:
