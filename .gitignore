@@ -21,7 +21,6 @@ _old_conversion_scripts2/*
 convert3.sh
 test_modules.py
 test_class.py
-conversion_scripts/convert_xlm_checkpoint.py
 convert_checkpoint_old.py
 convert_models/*/__pycache__
-convert_models/xlm/modeling_lsg_xlm.py
+convert_models/xlm/*
