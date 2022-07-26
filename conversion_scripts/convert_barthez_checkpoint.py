@@ -1,19 +1,4 @@
-import os
-import sys
-from dataclasses import dataclass, field
-
 from barthez.modeling_lsg_barthez import *
-import warnings
-import json 
-
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoTokenizer,
-    HfArgumentParser,
-    set_seed,
-)
-
 from .conversion_utils import ConversionScript
 
 class BarthezConversionScript(ConversionScript):

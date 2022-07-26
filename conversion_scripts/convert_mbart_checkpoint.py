@@ -1,19 +1,4 @@
-import os
-import sys
-from dataclasses import dataclass, field
-
 from mbart.modeling_lsg_mbart import *
-import warnings
-import json 
-
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoTokenizer,
-    HfArgumentParser,
-    set_seed,
-)
-
 from .conversion_utils import ConversionScript
 
 class MBartConversionScript(ConversionScript):

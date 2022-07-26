@@ -1,6 +1,5 @@
 
-from platform import architecture
-from transformers import AutoConfig, AutoTokenizer
+from transformers import AutoTokenizer
 import json
 import warnings
 import torch
@@ -121,7 +120,7 @@ class ConversionScript():
         is_base_architecture = True if _architecture in [self._BASE_ARCHITECTURE_TYPE, "LSG" + self._BASE_ARCHITECTURE_TYPE] else False
 
         # Check if it is LSG architecture
-        if vars(self.config).get("base_model_prefix", None) == "lsg" and "LSG" in architecture:
+        if vars(self.config).get("base_model_prefix", None) == "lsg" or "LSG" in _architecture:
             is_lsg_architecture = True
         else: 
             is_lsg_architecture = False

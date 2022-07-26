@@ -1,19 +1,4 @@
-import os
-import sys
-from dataclasses import dataclass, field
-
 from xlm_roberta.modeling_lsg_xlm_roberta import *
-import warnings
-import json 
-
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    AutoTokenizer,
-    HfArgumentParser,
-    set_seed,
-)
-
 from .conversion_utils import ConversionScript
 
 class XLMRobertaConversionScript(ConversionScript):
