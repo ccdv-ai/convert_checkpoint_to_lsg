@@ -18,7 +18,7 @@ Use `convert_checkpoint.py`. Available model_type (inside config.json):
 * "roberta"
 * "xlm-roberta"
 
-Model architecture is infered from config but you can specify a different one if the config is wrong (can happen for BART models), see  `python convert_bert_checkpoint.py --help`
+Model architecture is infered from config but you can specify a different one if the config is wrong (can happen for BART models), see  `python convert_checkpoint.py --help`
 
 
 BERT example (BertForPretraining):

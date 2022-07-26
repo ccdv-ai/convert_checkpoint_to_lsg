@@ -41,11 +41,11 @@ class FileArguments:
     """
 
     initial_model: str = field(
-        metadata={"help": "Model to convert for long sequences"}
+        metadata={"help": "Model to convert to its LSG variant"}
     )
 
     model_name: str = field(
-        metadata={"help": "Name of saved model after conversion"}
+        metadata={"help": "Name/path of the newly created model"}
     )
 
     max_sequence_length: int = field(
@@ -80,7 +80,7 @@ class FileArguments:
     resize_lsg: bool = field(
         default=False,
         metadata={
-            "help": "Only resize position embedding from a lsg model"}
+            "help": "Only resize the positional embedding from a LSG model (skip global tokens)"}
     )
 
     model_kwargs: Optional[str] = field(
