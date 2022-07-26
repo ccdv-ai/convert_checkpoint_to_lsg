@@ -748,7 +748,7 @@ class LSGSelfAttention(BaseSelfAttention):
         global_value, value_layer = value_layer.split(split, dim=-2)
         global_mask, attention_mask = attention_mask.split(split, dim=-1)
         
-        n, h, t, d = key_layer.size()
+        n, h, t, d = key_layer.size() 
 
         # Get sparse idx
         sparse_key, sparse_value, sparse_mask = (None, None, None)
