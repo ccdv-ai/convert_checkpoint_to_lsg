@@ -1,25 +1,26 @@
-from roberta.modeling_lsg_roberta import *
-from .conversion_utils import ConversionScript
+from convert_models.bert.modeling_lsg_bert import *
+from convert_models.conversion_utils import ConversionScript
 
-class RobertaConversionScript(ConversionScript):
+class BertConversionScript(ConversionScript):
 
     _ARCHITECTURE_TYPE_DICT = {
-        "RobertaModel": ("LSGRobertaModel", LSGRobertaModel),
-        "RobertaForMaskedLM": ("LSGRobertaForMaskedLM", LSGRobertaForMaskedLM),
-        "RobertaForCausalLM": ("LSGRobertaForCausalLM", LSGRobertaForCausalLM),
-        "RobertaForMultipleChoice": ("LSGRobertaForMultipleChoice", LSGRobertaForMultipleChoice),
-        "RobertaForQuestionAnswering": ("LSGRobertaForQuestionAnswering", LSGRobertaForQuestionAnswering),
-        "RobertaForSequenceClassification": ("LSGRobertaForSequenceClassification", LSGRobertaForSequenceClassification),
-        "RobertaForTokenClassification": ("LSGRobertaForTokenClassification", LSGRobertaForTokenClassification),
+        "BertModel": ("LSGBertModel", LSGBertModel),
+        "BertForMaskedLM": ("LSGBertForMaskedLM", LSGBertForMaskedLM),
+        "BertForPreTraining": ("LSGBertForPreTraining", LSGBertForPreTraining),
+        "BertLMHeadModel": ("LSGBertLMHeadModel", LSGBertLMHeadModel),
+        "BertForMultipleChoice": ("LSGBertForMultipleChoice", LSGBertForMultipleChoice),
+        "BertForQuestionAnswering": ("LSGBertForQuestionAnswering", LSGBertForQuestionAnswering),
+        "BertForSequenceClassification": ("LSGBertForSequenceClassification", LSGBertForSequenceClassification),
+        "BertForTokenClassification": ("LSGBertForTokenClassification", LSGBertForTokenClassification)
     }
     _ARCHITECTURE_TYPE_DICT = {**{"LSG" + k: v for k, v in _ARCHITECTURE_TYPE_DICT.items()}, **_ARCHITECTURE_TYPE_DICT}
 
-    _BASE_ARCHITECTURE_TYPE = "RobertaModel"
-    _DEFAULT_ARCHITECTURE_TYPE = "RobertaForMaskedLM"
-    _CONFIG_MODULE = LSGRobertaConfig
+    _BASE_ARCHITECTURE_TYPE = "BertModel"
+    _DEFAULT_ARCHITECTURE_TYPE = "BertForPreTraining"
+    _CONFIG_MODULE = LSGBertConfig
 
-    _DEFAULT_CONFIG_POSITIONAL_OFFSET = 2
-    _DEFAULT_POSITIONAL_OFFSET = 2
+    _DEFAULT_CONFIG_POSITIONAL_OFFSET = 0
+    _DEFAULT_POSITIONAL_OFFSET = 0
 
     def __init__(
         self, 
@@ -52,7 +53,7 @@ class RobertaConversionScript(ConversionScript):
     def get_module(self, model, is_base_architecture):
         if is_base_architecture:
             return model
-        return model.roberta
+        return model.bert
 
     def update_global_randomly(self, module_prefix, bos_id, stride, keep_first_global):
 
@@ -63,10 +64,10 @@ class RobertaConversionScript(ConversionScript):
         cov = torch.cov(u.T)
         m = MultivariateNormal(u.mean(dim=0), cov)
         w = m.sample((512,))
-
-        positions = module_prefix.embeddings.position_embeddings.weight.clone()[self._DEFAULT_POSITIONAL_OFFSET:]
-        positions = self.order_positions(positions, stride)
         w[0] = u[bos_id]
+
+        positions = module_prefix.embeddings.position_embeddings.weight.clone()
+        positions = self.order_positions(positions, stride)
 
         if keep_first_global:
             module_prefix.embeddings.global_embeddings.weight.data[1:] = (w + positions)[1:]
@@ -76,11 +77,12 @@ class RobertaConversionScript(ConversionScript):
     def update_global(self, module_prefix, bos_id, mask_id, stride, keep_first_global):
 
         u = module_prefix.embeddings.word_embeddings.weight.clone()
-        positions = module_prefix.embeddings.position_embeddings.weight.clone()[self._DEFAULT_POSITIONAL_OFFSET:]
+        positions = module_prefix.embeddings.position_embeddings.weight.clone()
         positions = self.order_positions(positions, stride)
+
         positions[0] += u[bos_id]
         positions[1:] += u[mask_id].unsqueeze(0)
-
+        
         if keep_first_global:
             module_prefix.embeddings.global_embeddings.weight.data[1:] = positions[1:]
         else:
@@ -92,9 +94,8 @@ class RobertaConversionScript(ConversionScript):
         current_max_position = position_embeddings_weights.size()[0]
 
         new_position_embeddings_weights = torch.cat([
-            position_embeddings_weights[:self._DEFAULT_POSITIONAL_OFFSET]] + 
-            [position_embeddings_weights[self._DEFAULT_POSITIONAL_OFFSET:] for _ in range(max_pos//current_max_position + 1)], 
-            dim=0)[:max_pos + self._DEFAULT_POSITIONAL_OFFSET]
+            position_embeddings_weights for _ in range(max_pos//current_max_position + 1)
+            ], dim=0)[:max_pos]
 
-        module_prefix.embeddings.position_ids = torch.arange(max_pos + self._DEFAULT_POSITIONAL_OFFSET, device=module_prefix.embeddings.position_ids.device).unsqueeze(0)
+        module_prefix.embeddings.position_ids = torch.arange(max_pos, device=module_prefix.embeddings.position_ids.device).unsqueeze(0)
         module_prefix.embeddings.position_embeddings.weight.data = new_position_embeddings_weights

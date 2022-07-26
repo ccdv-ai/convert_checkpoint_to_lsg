@@ -1,20 +1,20 @@
-from bart.modeling_lsg_bart import *
-from .conversion_utils import ConversionScript
+from convert_models.barthez.modeling_lsg_barthez import *
+from convert_models.conversion_utils import ConversionScript
 
-class BartConversionScript(ConversionScript):
+class BarthezConversionScript(ConversionScript):
 
     _ARCHITECTURE_TYPE_DICT = {
-        "BartModel": ("LSGBartModel", LSGBartModel),
-        "BartForConditionalGeneration": ("LSGBartForConditionalGeneration", LSGBartForConditionalGeneration),
-        "BartForCausalLM": ("LSGBartForCausalLM", LSGBartForCausalLM),
-        "BartForQuestionAnswering": ("LSGBartForQuestionAnswering", LSGBartForQuestionAnswering),
-        "BartForSequenceClassification": ("LSGBartForSequenceClassification", LSGBartForSequenceClassification),
-        }
+        "MBartModel": ("LSGMBartModel", LSGMBartModel),
+        "MBartForConditionalGeneration": ("LSGMBartForConditionalGeneration", LSGMBartForConditionalGeneration),
+        "MBartForCausalLM": ("LSGMBartForCausalLM", LSGMBartForCausalLM),
+        "MBartForQuestionAnswering": ("LSGMBartForQuestionAnswering", LSGMBartForQuestionAnswering),
+        "MBartForSequenceClassification": ("LSGMBartForSequenceClassification", LSGMBartForSequenceClassification),
+    }
     _ARCHITECTURE_TYPE_DICT = {**{"LSG" + k: v for k, v in _ARCHITECTURE_TYPE_DICT.items()}, **_ARCHITECTURE_TYPE_DICT}
 
-    _BASE_ARCHITECTURE_TYPE = "BartModel"
-    _DEFAULT_ARCHITECTURE_TYPE = "BartForConditionalGeneration"
-    _CONFIG_MODULE = LSGBartConfig
+    _BASE_ARCHITECTURE_TYPE = "MBartModel"
+    _DEFAULT_ARCHITECTURE_TYPE = "MBartForConditionalGeneration"
+    _CONFIG_MODULE = LSGMBartConfig
 
     _DEFAULT_CONFIG_POSITIONAL_OFFSET = 0
     _DEFAULT_POSITIONAL_OFFSET = 2
@@ -74,14 +74,14 @@ class BartConversionScript(ConversionScript):
     def update_global(self, module_prefix, bos_id, mask_id, stride, keep_first_global):
 
         u = module_prefix.shared.weight.clone()
-        positions = module_prefix.encoder.embed_positions.weight.clone()[self._DEFAULT_POSITIONAL_OFFSET:]
+        positions = module_prefix.encoder.embed_positions.weight.clone()[2:]
         positions = self.order_positions(positions, stride)
 
         positions[0] += u[bos_id]
         positions[1:] += u[mask_id].unsqueeze(0)
 
         if keep_first_global:
-            module_prefix.encoder.global_embeddings.weight.data[1:] = positions[self._DEFAULT_POSITIONAL_OFFSET:]
+            module_prefix.encoder.global_embeddings.weight.data[1:] = positions[1:]
         else:
             module_prefix.encoder.global_embeddings.weight.data = positions
 

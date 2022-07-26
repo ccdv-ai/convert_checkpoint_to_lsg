@@ -1,5 +1,4 @@
-from bart.modeling_lsg_bart import *
-from conversion_utils import ConversionScript
+from convert_models.conversion_utils import ConversionScript
 
 
 class DummyConversionScript(ConversionScript):

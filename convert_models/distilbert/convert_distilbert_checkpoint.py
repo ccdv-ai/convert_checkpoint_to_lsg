@@ -1,23 +1,21 @@
-from bert.modeling_lsg_bert import *
-from .conversion_utils import ConversionScript
+from convert_models.distilbert.modeling_lsg_distilbert import *
+from convert_models.conversion_utils import ConversionScript
 
-class BertConversionScript(ConversionScript):
+class DistilBertConversionScript(ConversionScript):
 
     _ARCHITECTURE_TYPE_DICT = {
-        "BertModel": ("LSGBertModel", LSGBertModel),
-        "BertForMaskedLM": ("LSGBertForMaskedLM", LSGBertForMaskedLM),
-        "BertForPreTraining": ("LSGBertForPreTraining", LSGBertForPreTraining),
-        "BertLMHeadModel": ("LSGBertLMHeadModel", LSGBertLMHeadModel),
-        "BertForMultipleChoice": ("LSGBertForMultipleChoice", LSGBertForMultipleChoice),
-        "BertForQuestionAnswering": ("LSGBertForQuestionAnswering", LSGBertForQuestionAnswering),
-        "BertForSequenceClassification": ("LSGBertForSequenceClassification", LSGBertForSequenceClassification),
-        "BertForTokenClassification": ("LSGBertForTokenClassification", LSGBertForTokenClassification)
+        "DistilBertModel": ("LSGDistilBertModel", LSGDistilBertModel),
+        "DistilBertForMaskedLM": ("LSGDistilBertForMaskedLM", LSGDistilBertForMaskedLM),
+        "DistilBertForMultipleChoice": ("LSGDistilBertForMultipleChoice", LSGDistilBertForMultipleChoice),
+        "DistilBertForQuestionAnswering": ("LSGDistilBertForQuestionAnswering", LSGDistilBertForQuestionAnswering),
+        "DistilBertForSequenceClassification": ("LSGDistilBertForSequenceClassification", LSGDistilBertForSequenceClassification),
+        "DistilBertForTokenClassification": ("LSGDistilBertForTokenClassification", LSGDistilBertForTokenClassification),
     }
     _ARCHITECTURE_TYPE_DICT = {**{"LSG" + k: v for k, v in _ARCHITECTURE_TYPE_DICT.items()}, **_ARCHITECTURE_TYPE_DICT}
 
-    _BASE_ARCHITECTURE_TYPE = "BertModel"
-    _DEFAULT_ARCHITECTURE_TYPE = "BertForPreTraining"
-    _CONFIG_MODULE = LSGBertConfig
+    _BASE_ARCHITECTURE_TYPE = "DistilBertModel"
+    _DEFAULT_ARCHITECTURE_TYPE = "DistilBertForMaskedLM"
+    _CONFIG_MODULE = LSGDistilBertConfig
 
     _DEFAULT_CONFIG_POSITIONAL_OFFSET = 0
     _DEFAULT_POSITIONAL_OFFSET = 0
@@ -53,7 +51,7 @@ class BertConversionScript(ConversionScript):
     def get_module(self, model, is_base_architecture):
         if is_base_architecture:
             return model
-        return model.bert
+        return model.distilbert
 
     def update_global_randomly(self, module_prefix, bos_id, stride, keep_first_global):
 
@@ -64,10 +62,11 @@ class BertConversionScript(ConversionScript):
         cov = torch.cov(u.T)
         m = MultivariateNormal(u.mean(dim=0), cov)
         w = m.sample((512,))
-        w[0] = u[bos_id]
 
         positions = module_prefix.embeddings.position_embeddings.weight.clone()
         positions = self.order_positions(positions, stride)
+
+        w[0] = u[bos_id]
 
         if keep_first_global:
             module_prefix.embeddings.global_embeddings.weight.data[1:] = (w + positions)[1:]
@@ -82,7 +81,7 @@ class BertConversionScript(ConversionScript):
 
         positions[0] += u[bos_id]
         positions[1:] += u[mask_id].unsqueeze(0)
-        
+
         if keep_first_global:
             module_prefix.embeddings.global_embeddings.weight.data[1:] = positions[1:]
         else:
@@ -93,9 +92,9 @@ class BertConversionScript(ConversionScript):
         position_embeddings_weights = module_prefix.embeddings.position_embeddings.weight.clone()
         current_max_position = position_embeddings_weights.size()[0]
 
-        new_position_embeddings_weights = torch.cat([
-            position_embeddings_weights for _ in range(max_pos//current_max_position + 1)
-            ], dim=0)[:max_pos]
+        new_position_embeddings_weights = torch.cat(
+            [position_embeddings_weights for _ in range(max_pos//current_max_position + 1)], 
+            dim=0)[:max_pos]
 
         module_prefix.embeddings.position_ids = torch.arange(max_pos, device=module_prefix.embeddings.position_ids.device).unsqueeze(0)
         module_prefix.embeddings.position_embeddings.weight.data = new_position_embeddings_weights

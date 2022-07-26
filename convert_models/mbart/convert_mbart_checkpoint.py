@@ -1,5 +1,5 @@
-from mbart.modeling_lsg_mbart import *
-from .conversion_utils import ConversionScript
+from convert_models.mbart.modeling_lsg_mbart import *
+from convert_models.conversion_utils import ConversionScript
 
 class MBartConversionScript(ConversionScript):
 

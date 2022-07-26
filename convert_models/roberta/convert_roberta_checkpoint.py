@@ -1,22 +1,22 @@
-from xlm_roberta.modeling_lsg_xlm_roberta import *
-from .conversion_utils import ConversionScript
+from convert_models.roberta.modeling_lsg_roberta import *
+from convert_models.conversion_utils import ConversionScript
 
-class XLMRobertaConversionScript(ConversionScript):
+class RobertaConversionScript(ConversionScript):
 
     _ARCHITECTURE_TYPE_DICT = {
-        "XLMRobertaModel": ("LSGXLMRobertaModel", LSGXLMRobertaModel),
-        "XLMRobertaForMaskedLM": ("LSGXLMRobertaForMaskedLM", LSGXLMRobertaForMaskedLM),
-        "XLMRobertaForCausalLM": ("LSGXLMRobertaForCausalLM", LSGXLMRobertaForCausalLM),
-        "XLMRobertaForMultipleChoice": ("LSGXLMRobertaForMultipleChoice", LSGXLMRobertaForMultipleChoice),
-        "XLMRobertaForQuestionAnswering": ("LSGXLMRobertaForQuestionAnswering", LSGXLMRobertaForQuestionAnswering),
-        "XLMRobertaForSequenceClassification": ("LSGXLMRobertaForSequenceClassification", LSGXLMRobertaForSequenceClassification),
-        "XLMRobertaForTokenClassification": ("LSGXLMRobertaForTokenClassification", LSGXLMRobertaForTokenClassification),
+        "RobertaModel": ("LSGRobertaModel", LSGRobertaModel),
+        "RobertaForMaskedLM": ("LSGRobertaForMaskedLM", LSGRobertaForMaskedLM),
+        "RobertaForCausalLM": ("LSGRobertaForCausalLM", LSGRobertaForCausalLM),
+        "RobertaForMultipleChoice": ("LSGRobertaForMultipleChoice", LSGRobertaForMultipleChoice),
+        "RobertaForQuestionAnswering": ("LSGRobertaForQuestionAnswering", LSGRobertaForQuestionAnswering),
+        "RobertaForSequenceClassification": ("LSGRobertaForSequenceClassification", LSGRobertaForSequenceClassification),
+        "RobertaForTokenClassification": ("LSGRobertaForTokenClassification", LSGRobertaForTokenClassification),
     }
     _ARCHITECTURE_TYPE_DICT = {**{"LSG" + k: v for k, v in _ARCHITECTURE_TYPE_DICT.items()}, **_ARCHITECTURE_TYPE_DICT}
 
-    _BASE_ARCHITECTURE_TYPE = "XLMRobertaModel"
-    _DEFAULT_ARCHITECTURE_TYPE = "XLMRobertaForMaskedLM"
-    _CONFIG_MODULE = LSGXLMRobertaConfig
+    _BASE_ARCHITECTURE_TYPE = "RobertaModel"
+    _DEFAULT_ARCHITECTURE_TYPE = "RobertaForMaskedLM"
+    _CONFIG_MODULE = LSGRobertaConfig
 
     _DEFAULT_CONFIG_POSITIONAL_OFFSET = 2
     _DEFAULT_POSITIONAL_OFFSET = 2

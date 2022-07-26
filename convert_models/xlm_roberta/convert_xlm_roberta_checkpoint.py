@@ -1,22 +1,22 @@
-from camembert.modeling_lsg_camembert import *
-from .conversion_utils import ConversionScript
+from convert_models.xlm_roberta.modeling_lsg_xlm_roberta import *
+from convert_models.conversion_utils import ConversionScript
 
-class CamembertConversionScript(ConversionScript):
+class XLMRobertaConversionScript(ConversionScript):
 
     _ARCHITECTURE_TYPE_DICT = {
-        "CamembertModel": ("LSGCamembertModel", LSGCamembertModel),
-        "CamembertForMaskedLM": ("LSGCamembertForMaskedLM", LSGCamembertForMaskedLM),
-        "CamembertForCausalLM": ("LSGCamembertForCausalLM", LSGCamembertForCausalLM),
-        "CamembertForMultipleChoice": ("LSGCamembertForMultipleChoice", LSGCamembertForMultipleChoice),
-        "CamembertForQuestionAnswering": ("LSGCamembertForQuestionAnswering", LSGCamembertForQuestionAnswering),
-        "CamembertForSequenceClassification": ("LSGCamembertForSequenceClassification", LSGCamembertForSequenceClassification),
-        "CamembertForTokenClassification": ("LSGCamembertForTokenClassification", LSGCamembertForTokenClassification),
+        "XLMRobertaModel": ("LSGXLMRobertaModel", LSGXLMRobertaModel),
+        "XLMRobertaForMaskedLM": ("LSGXLMRobertaForMaskedLM", LSGXLMRobertaForMaskedLM),
+        "XLMRobertaForCausalLM": ("LSGXLMRobertaForCausalLM", LSGXLMRobertaForCausalLM),
+        "XLMRobertaForMultipleChoice": ("LSGXLMRobertaForMultipleChoice", LSGXLMRobertaForMultipleChoice),
+        "XLMRobertaForQuestionAnswering": ("LSGXLMRobertaForQuestionAnswering", LSGXLMRobertaForQuestionAnswering),
+        "XLMRobertaForSequenceClassification": ("LSGXLMRobertaForSequenceClassification", LSGXLMRobertaForSequenceClassification),
+        "XLMRobertaForTokenClassification": ("LSGXLMRobertaForTokenClassification", LSGXLMRobertaForTokenClassification),
     }
     _ARCHITECTURE_TYPE_DICT = {**{"LSG" + k: v for k, v in _ARCHITECTURE_TYPE_DICT.items()}, **_ARCHITECTURE_TYPE_DICT}
 
-    _BASE_ARCHITECTURE_TYPE = "CamembertModel"
-    _DEFAULT_ARCHITECTURE_TYPE = "CamembertForMaskedLM"
-    _CONFIG_MODULE = LSGCamembertConfig
+    _BASE_ARCHITECTURE_TYPE = "XLMRobertaModel"
+    _DEFAULT_ARCHITECTURE_TYPE = "XLMRobertaForMaskedLM"
+    _CONFIG_MODULE = LSGXLMRobertaConfig
 
     _DEFAULT_CONFIG_POSITIONAL_OFFSET = 2
     _DEFAULT_POSITIONAL_OFFSET = 2

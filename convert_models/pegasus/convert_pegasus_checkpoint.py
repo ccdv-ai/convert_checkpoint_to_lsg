@@ -1,5 +1,5 @@
-from pegasus.modeling_lsg_pegasus import *
-from .conversion_utils import ConversionScript
+from convert_models.pegasus.modeling_lsg_pegasus import *
+from convert_models.conversion_utils import ConversionScript
 
 class PegasusConversionScript(ConversionScript):
 

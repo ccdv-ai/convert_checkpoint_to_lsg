@@ -10,15 +10,15 @@ from transformers import (
     set_seed,
 )
 
-from conversion_scripts.convert_bart_checkpoint import *
-from conversion_scripts.convert_barthez_checkpoint import *
-from conversion_scripts.convert_bert_checkpoint import *
-from conversion_scripts.convert_camembert_checkpoint import *
-from conversion_scripts.convert_distilbert_checkpoint import *
-from conversion_scripts.convert_mbart_checkpoint import *
-from conversion_scripts.convert_pegasus_checkpoint import *
-from conversion_scripts.convert_roberta_checkpoint import *
-from conversion_scripts.convert_xlm_roberta_checkpoint import *
+from convert_models.bart.convert_bart_checkpoint import *
+from convert_models.barthez.convert_barthez_checkpoint import *
+from convert_models.bert.convert_bert_checkpoint import *
+from convert_models.camembert.convert_camembert_checkpoint import *
+from convert_models.distilbert.convert_distilbert_checkpoint import *
+from convert_models.mbart.convert_mbart_checkpoint import *
+from convert_models.pegasus.convert_pegasus_checkpoint import *
+from convert_models.roberta.convert_roberta_checkpoint import *
+from convert_models.xlm_roberta.convert_xlm_roberta_checkpoint import *
 
 
 _AUTH_MODELS = {
