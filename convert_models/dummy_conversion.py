@@ -1,4 +1,4 @@
-from convert_models.conversion_utils import ConversionScript
+from .conversion_utils import ConversionScript
 
 
 class DummyConversionScript(ConversionScript):

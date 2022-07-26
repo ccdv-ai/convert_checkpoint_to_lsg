@@ -1,5 +1,5 @@
-from convert_models.camembert.modeling_lsg_camembert import *
-from convert_models.conversion_utils import ConversionScript
+from .modeling_lsg_camembert import *
+from ..conversion_utils import ConversionScript
 
 class CamembertConversionScript(ConversionScript):
 

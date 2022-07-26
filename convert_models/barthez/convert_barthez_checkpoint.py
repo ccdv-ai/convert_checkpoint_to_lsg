@@ -1,5 +1,5 @@
-from convert_models.barthez.modeling_lsg_barthez import *
-from convert_models.conversion_utils import ConversionScript
+from .modeling_lsg_barthez import *
+from ..conversion_utils import ConversionScript
 
 class BarthezConversionScript(ConversionScript):
 

@@ -1,5 +1,5 @@
-from convert_models.xlm_roberta.modeling_lsg_xlm_roberta import *
-from convert_models.conversion_utils import ConversionScript
+from .modeling_lsg_xlm_roberta import *
+from ..conversion_utils import ConversionScript
 
 class XLMRobertaConversionScript(ConversionScript):
 

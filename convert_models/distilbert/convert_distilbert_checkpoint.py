@@ -1,5 +1,5 @@
-from convert_models.distilbert.modeling_lsg_distilbert import *
-from convert_models.conversion_utils import ConversionScript
+from .modeling_lsg_distilbert import *
+from ..conversion_utils import ConversionScript
 
 class DistilBertConversionScript(ConversionScript):
 
