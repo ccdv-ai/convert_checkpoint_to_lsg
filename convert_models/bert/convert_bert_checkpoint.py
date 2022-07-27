@@ -22,33 +22,8 @@ class BertConversionScript(ConversionScript):
     _DEFAULT_CONFIG_POSITIONAL_OFFSET = 0
     _DEFAULT_POSITIONAL_OFFSET = 0
 
-    def __init__(
-        self, 
-        initial_model, 
-        model_name, 
-        max_sequence_length, 
-        architecture, 
-        random_global_init, 
-        global_positional_stride, 
-        keep_first_global_token, 
-        resize_lsg, 
-        model_kwargs, 
-        config,
-        seed
-        ):
-        super().__init__(
-            initial_model, 
-            model_name, 
-            max_sequence_length, 
-            architecture, 
-            random_global_init, 
-            global_positional_stride, 
-            keep_first_global_token, 
-            resize_lsg, 
-            model_kwargs, 
-            config,
-            seed
-        )
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
     def get_module(self, model, is_base_architecture):
         if is_base_architecture:
