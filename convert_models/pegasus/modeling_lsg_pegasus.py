@@ -13,7 +13,7 @@ AUTO_MAP = {
 
 class LSGPegasusConfig(PegasusConfig):
     """
-    This class overrides :class:`~transformers.RobertaConfig`. Please check the superclass for the appropriate
+    This class overrides :class:`~transformers.PegasusConfig`. Please check the superclass for the appropriate
     documentation alongside usage examples.
     """
 
@@ -556,8 +556,6 @@ class LSGPegasusEncoderAttention(BaseSelfAttention):
                 attention_mask=attention_mask
                 )
 
-            if head_mask is not None:
-                context_layer = context_layer * head_mask[:, :, :1, :1]
             return self.reshape_output(context_layer)
 
         # Split input into global tokens and other tokens
@@ -605,8 +603,6 @@ class LSGPegasusEncoderAttention(BaseSelfAttention):
 
         # Merge global and local-sparse tokens
         context_layer = torch.cat([bos, context_layer], dim=-2)
-        if head_mask is not None:
-            context_layer = context_layer * head_mask[:, :, :1, :1]
         context_layer = self.reshape_output(context_layer)
         
         return context_layer

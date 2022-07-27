@@ -17,6 +17,7 @@ xlm/*
 _old/*
 _old_conversion_scripts/*
 _old_conversion_scripts2/*
+_with_attn/*
 */__pycache__/*
 convert3.sh
 test_modules.py
@@ -24,3 +25,4 @@ test_class.py
 convert_checkpoint_old.py
 convert_models/*/__pycache__
 convert_models/xlm/*
+test_model.py

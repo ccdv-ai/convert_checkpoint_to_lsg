@@ -1,7 +1,7 @@
 from logging import warn
 import torch
-from transformers.models.bart.modeling_bart import *
-from transformers.models.bart.modeling_bart import _expand_mask
+from transformers.models.mbart.modeling_mbart import *
+from transformers.models.mbart.modeling_mbart import _expand_mask
 import torch.nn as nn
 import sys
 
@@ -13,9 +13,9 @@ AUTO_MAP = {
         "AutoModelForSeq2SeqLM": "modeling_lsg_barthez.LSGMBartForConditionalGeneration"
     }
 
-class LSGMBartConfig(BartConfig):
+class LSGMBartConfig(MBartConfig):
     """
-    This class overrides :class:`~transformers.BartConfig`. Please check the superclass for the appropriate
+    This class overrides :class:`~transformers.MBartConfig`. Please check the superclass for the appropriate
     documentation alongside usage examples.
     """
 
@@ -41,7 +41,7 @@ class LSGMBartConfig(BartConfig):
         ):
         """Constructs LSGConfig."""
         super().__init__(**kwargs)
-        
+
         self.adaptive = adaptive
         self.auto_map = AUTO_MAP
         self.base_model_prefix = base_model_prefix
@@ -81,7 +81,7 @@ class LSGMBartConfig(BartConfig):
             assert self.block_size % self.sparsity_factor == 0, "[ERROR CONFIG]: block_size must be divisible by sparsity_factor"
             assert self.block_size//self.sparsity_factor >= 1, "[ERROR CONFIG]: make sure block_size >= sparsity_factor"
             
-        
+
 class BaseSelfAttention(nn.Module):
 
     def __init__(
@@ -265,7 +265,7 @@ class LSGAttentionProduct(nn.Module):
         s = (size - step) // 2
 
         # Pad before block reshaping
-        if is_attn_mask:
+        if is_attn_mask: 
             pad_value = torch.finfo(hidden_states.dtype).min
             hidden_states = hidden_states.transpose(-1, -2)
         else: 
@@ -295,7 +295,7 @@ class LSGAttentionProduct(nn.Module):
 
         # Pad before block reshaping
         if is_attn_mask:
-            pad_value = torch.finfo(hidden_states.dtype).min  
+            pad_value = torch.finfo(hidden_states.dtype).min
             hidden_states = hidden_states.transpose(-1, -2)
         else: 
             pad_value = 0
@@ -376,7 +376,7 @@ class LSGMBartEncoderAttention(BaseSelfAttention):
             
         if config.sparsity_type == "lsh":
             self.lsh_num_pre_rounds = config.lsh_num_pre_rounds
-        
+
     def get_sparse_tokens_with_norm(self, keys, values, mask):
         
         if self.sparsity_factor == 1:
@@ -490,7 +490,6 @@ class LSGMBartEncoderAttention(BaseSelfAttention):
         values /= mask + 1e-8
 
         mask = (1. - mask.clamp(0, 1)) * torch.finfo(mask.dtype).min
-
         return keys.reshape(n, h, -1, d), values.reshape(n, h, -1, d), mask.transpose(-1, -2).reshape(n, h, 1, -1)
 
     def lsh_round(self, keys, values, mask, output_size):
@@ -558,8 +557,6 @@ class LSGMBartEncoderAttention(BaseSelfAttention):
                 attention_mask=attention_mask
                 )
 
-            if head_mask is not None:
-                context_layer = context_layer * head_mask[:, :, :1, :1]
             return self.reshape_output(context_layer)
 
         # Split input into global tokens and other tokens
@@ -607,8 +604,6 @@ class LSGMBartEncoderAttention(BaseSelfAttention):
 
         # Merge global and local-sparse tokens
         context_layer = torch.cat([bos, context_layer], dim=-2)
-        if head_mask is not None:
-            context_layer = context_layer * head_mask[:, :, :1, :1]
         context_layer = self.reshape_output(context_layer)
         
         return context_layer
@@ -619,7 +614,7 @@ class LSGMBartEncoderAttention(BaseSelfAttention):
         return x.reshape(n, h, -1, chunk_size, d)
 
 
-class LSGMBartEncoderLayer(BartEncoderLayer):
+class LSGMBartEncoderLayer(MBartEncoderLayer):
 
     def __init__(self, config):
 
@@ -632,14 +627,14 @@ class LSGMBartEncoderLayer(BartEncoderLayer):
         )
 
 
-class LSGMBartDecoderLayer(BartDecoderLayer):
+class LSGMBartDecoderLayer(MBartDecoderLayer):
 
     def __init__(self, config):
 
         super().__init__(config)
-        
 
-class LSGMBartClassificationHead(BartClassificationHead):
+
+class LSGMBartClassificationHead(MBartClassificationHead):
     """Head for sentence-level classification tasks."""
 
     def __init__(
@@ -653,31 +648,23 @@ class LSGMBartClassificationHead(BartClassificationHead):
         super().__init__(input_dim, inner_dim, num_classes, pooler_dropout)
 
 
-class LSGMBartPretrainedModel(BartPretrainedModel):
+class LSGMBartPretrainedModel(MBartPreTrainedModel):
 
     config_class = LSGMBartConfig
+    base_model_prefix = "model"
+    supports_gradient_checkpointing = True
 
     def _set_gradient_checkpointing(self, module, value=False):
-        print(isinstance(module, (BartDecoder, BartEncoder, LSGMBartDecoder, LSGMBartEncoder)))
-        if isinstance(module, (BartDecoder, BartEncoder, LSGMBartDecoder, LSGMBartEncoder)):
+        if isinstance(module, (MBartDecoder, MBartEncoder, LSGMBartDecoder, LSGMBartEncoder)):
             module.gradient_checkpointing = value
 
 
-class PretrainedLSGMBartModel(LSGMBartPretrainedModel):
-
-    def __init_subclass__(self):
-        warnings.warn(
-            "The class `PretrainedBartModel` has been depreciated, please use `LSGMBartPretrainedModel` instead.",
-            FutureWarning,
-        )
-
-
-class LSGMBartEncoder(LSGMBartPretrainedModel, BartEncoder):
+class LSGMBartEncoder(LSGMBartPretrainedModel, MBartEncoder):
     """
     Transformer encoder consisting of *config.encoder_layers* self attention layers. Each layer is a
-    :class:`BartEncoderLayer`.
+    [`MBartEncoderLayer`].
     Args:
-        config: BartConfig
+        config: MBartConfig
         embed_tokens (nn.Embedding): output embedding
     """
 
@@ -697,12 +684,13 @@ class LSGMBartEncoder(LSGMBartPretrainedModel, BartEncoder):
         else:
             self.embed_tokens = nn.Embedding(config.vocab_size, embed_dim, self.padding_idx)
 
-        self.embed_positions = BartLearnedPositionalEmbedding(
+        self.embed_positions = MBartLearnedPositionalEmbedding(
             config.max_position_embeddings,
             embed_dim,
         )
         self.layers = nn.ModuleList([LSGMBartEncoderLayer(config) for _ in range(config.encoder_layers)])
         self.layernorm_embedding = nn.LayerNorm(embed_dim)
+        self.layer_norm = nn.LayerNorm(config.d_model)
 
         # 
         assert hasattr(config, "num_global_tokens")
@@ -740,8 +728,8 @@ class LSGMBartEncoder(LSGMBartPretrainedModel, BartEncoder):
         if attention_mask is None:
             attention_mask = torch.ones(n, t, device=inputs_.device, dtype=inputs_.dtype)
         if self.mask_first_token:
-            attention_mask[:,0] = 0
-            
+            attention_mask[:, 0] = 0
+
         b = self.block_size * 2
         pad = t % self.block_size
         
@@ -880,6 +868,8 @@ class LSGMBartEncoder(LSGMBartPretrainedModel, BartEncoder):
             if output_attentions:
                 all_attentions = all_attentions + (layer_outputs[1],)
 
+        hidden_states = self.layer_norm(hidden_states)
+
         if output_hidden_states:
             encoder_states = encoder_states + (hidden_states,)
 
@@ -890,9 +880,9 @@ class LSGMBartEncoder(LSGMBartPretrainedModel, BartEncoder):
         )
 
 
-class LSGMBartDecoder(LSGMBartPretrainedModel, BartDecoder):
+class LSGMBartDecoder(LSGMBartPretrainedModel, MBartDecoder):
     """
-    Transformer decoder consisting of *config.decoder_layers* layers. Each layer is a :class:`LSGMBartDecoderLayer`
+    Transformer decoder consisting of *config.decoder_layers* layers. Each layer is a :class:`LSGBartDecoderLayer`
     Args:
         config: BartConfig
         embed_tokens (nn.Embedding): output embedding
@@ -914,20 +904,21 @@ class LSGMBartDecoder(LSGMBartPretrainedModel, BartDecoder):
         else:
             self.embed_tokens = nn.Embedding(config.vocab_size, config.d_model, self.padding_idx)
 
-        self.embed_positions = BartLearnedPositionalEmbedding(
+        self.embed_positions = MBartLearnedPositionalEmbedding(
             config.max_position_embeddings,
             config.d_model,
         )
         self.layers = nn.ModuleList([LSGMBartDecoderLayer(config) for _ in range(config.decoder_layers)])
         self.layernorm_embedding = nn.LayerNorm(config.d_model)
-
+        self.layer_norm = nn.LayerNorm(config.d_model)
+        
         self.gradient_checkpointing = False
 
         # Initialize weights and apply final processing
         self.post_init()
 
 
-class LSGMBartModel(LSGMBartPretrainedModel, BartModel):
+class LSGMBartModel(LSGMBartPretrainedModel, MBartModel):
 
     def __init__(self, config):
 
@@ -964,19 +955,17 @@ class LSGMBartModel(LSGMBartPretrainedModel, BartModel):
         return_dict=None,
         ):
 
-        # different to other models, Bart automatically creates decoder_input_ids from
-        # input_ids if no decoder_input_ids are provided
-        if decoder_input_ids is None and decoder_inputs_embeds is None:
-            decoder_input_ids = shift_tokens_right(
-                input_ids, self.config.pad_token_id, self.config.decoder_start_token_id
-            )
-
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        # different to other models, MBart automatically creates decoder_input_ids from
+        # input_ids if no decoder_input_ids are provided
+        if decoder_input_ids is None:
+            decoder_input_ids = shift_tokens_right(input_ids, self.config.pad_token_id)
 
         if encoder_outputs is None:
             encoder_outputs = self.encoder(
@@ -999,7 +988,7 @@ class LSGMBartModel(LSGMBartPretrainedModel, BartModel):
         # Pad mask for global tokens
         if self.pass_global_tokens_to_decoder and attention_mask is not None:
             attention_mask = torch.nn.functional.pad(attention_mask, pad=(self.num_global_tokens, 0), value=1)
-            
+
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
             input_ids=decoder_input_ids,
@@ -1031,10 +1020,15 @@ class LSGMBartModel(LSGMBartPretrainedModel, BartModel):
         )
 
 
-class LSGMBartForConditionalGeneration(LSGMBartPretrainedModel, BartForConditionalGeneration):
+class LSGMBartForConditionalGeneration(LSGMBartPretrainedModel, MBartForConditionalGeneration):
     
     base_model_prefix = "model"
-    _keys_to_ignore_on_load_missing = [r"final_logits_bias", r"lm_head\.weight"]
+    _keys_to_ignore_on_load_missing = [
+        r"final_logits_bias",
+        r"encoder.version",
+        r"decoder.version",
+        r"lm_head.weight",
+    ]
 
     def __init__(self, config):
 
@@ -1047,9 +1041,9 @@ class LSGMBartForConditionalGeneration(LSGMBartPretrainedModel, BartForCondition
         self.post_init()
 
 
-class LSGMBartForSequenceClassification(LSGMBartPretrainedModel, BartForSequenceClassification):
+class LSGMBartForSequenceClassification(LSGMBartPretrainedModel, MBartForSequenceClassification):
 
-    def __init__(self, config: LSGMBartConfig, **kwargs):
+    def __init__(self, config, **kwargs):
 
         LSGMBartPretrainedModel.__init__(self, config, **kwargs)
         self.model = LSGMBartModel(config)
@@ -1063,9 +1057,9 @@ class LSGMBartForSequenceClassification(LSGMBartPretrainedModel, BartForSequence
         self.model._init_weights(self.classification_head.out_proj)
 
 
-class LSGMBartForQuestionAnswering(LSGMBartPretrainedModel, BartForQuestionAnswering):
+class LSGMBartForQuestionAnswering(LSGMBartPretrainedModel, MBartForQuestionAnswering):
 
-    def __init__(self, config: LSGMBartConfig):
+    def __init__(self, config):
 
         LSGMBartPretrainedModel.__init__(self, config)
 
@@ -1077,14 +1071,14 @@ class LSGMBartForQuestionAnswering(LSGMBartPretrainedModel, BartForQuestionAnswe
 
         self.model._init_weights(self.qa_outputs)
 
-
+    
 class LSGMBartDecoderWrapper(LSGMBartPretrainedModel):
     """
     This wrapper class is a helper class to correctly load pretrained checkpoints when the causal language model is
     used in combination with the :class:`~transformers.EncoderDecoderModel` framework.
     """
 
-    def __init__(self, config: LSGMBartConfig):
+    def __init__(self, config):
         super().__init__(config)
         self.decoder = LSGMBartDecoder(config)
 
@@ -1092,9 +1086,9 @@ class LSGMBartDecoderWrapper(LSGMBartPretrainedModel):
         return self.decoder(*args, **kwargs)
 
 
-class LSGMBartForCausalLM(LSGMBartPretrainedModel, BartForCausalLM):
+class LSGMBartForCausalLM(LSGMBartPretrainedModel, MBartForCausalLM):
 
-    def __init__(self, config: LSGMBartConfig):
+    def __init__(self, config):
 
         config = copy.deepcopy(config)
         config.is_decoder = True

@@ -1032,33 +1032,26 @@ class LSGCamembertModel(LSGCamembertPreTrainedModel, RobertaModel):
             return_dict=return_dict
             )
 
-        context = encoder_outputs[0]
+        sequence_output = encoder_outputs[0]
         if self.pool_with_global:
-            context[:, self.num_global_tokens] = context[:, 0]
+            sequence_output[:, self.num_global_tokens] = sequence_output[:, 0]
         
         diff = t - t_
-        n, _, d = context.size()
-        context = context[..., self.num_global_tokens:, :]
+        n, _, d = sequence_output.size()
+        sequence_output = sequence_output[..., self.num_global_tokens:, :]
 
         # Adapt sequence to initial shape
         if diff < 0:
-            context = context[:, :t]
+            sequence_output = sequence_output[:, :t]
         
-        encoder_outputs.last_hidden_state = context
-        sequence_output = encoder_outputs[0]
         pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
 
         if not return_dict:
             return (sequence_output, pooled_output) + encoder_outputs[1:]
-
-        return BaseModelOutputWithPoolingAndCrossAttentions(
-            last_hidden_state=sequence_output,
-            pooler_output=pooled_output,
-            past_key_values=encoder_outputs.past_key_values,
-            hidden_states=encoder_outputs.hidden_states,
-            attentions=encoder_outputs.attentions,
-            cross_attentions=encoder_outputs.cross_attentions,
-        )
+        
+        encoder_outputs.last_hidden_state = sequence_output 
+        encoder_outputs.pooler_output = pooled_output
+        return encoder_outputs
     
     def get_extended_attention_mask(self, attention_mask, input_shape, device=None):
 

@@ -981,26 +981,24 @@ class LSGDistilBertModel(LSGDistilBertPreTrainedModel, DistilBertModel):
             return_dict=return_dict,
             )
 
-        context = encoder_outputs[0]
+        sequence_output = encoder_outputs[0]
         if self.pool_with_global:
-            context[:, self.num_global_tokens] = context[:, 0]
+            sequence_output[:, self.num_global_tokens] = sequence_output[:, 0]
         
         diff = t - t_
-        n, _, d = context.size()
-        context = context[..., self.num_global_tokens:, :]
+        n, _, d = sequence_output.size()
+        sequence_output = sequence_output[..., self.num_global_tokens:, :]
 
         # Adapt sequence to initial shape
         if diff < 0:
-            context = context[:, :t]
-        
-        if not return_dict:
-            return (context, ) + encoder_outputs[1:]
+            sequence_output = sequence_output[:, :t]
 
-        return BaseModelOutput(
-            last_hidden_state=context, 
-            hidden_states=encoder_outputs.hidden_states, 
-            attentions=encoder_outputs.attentions,
-        )
+        if not return_dict:
+            return (sequence_output, ) + encoder_outputs[1:]
+
+        encoder_outputs.last_hidden_state = sequence_output 
+        return encoder_outputs
+        
 
     def _forward(
         self,

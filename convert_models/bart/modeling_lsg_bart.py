@@ -557,8 +557,6 @@ class LSGBartEncoderAttention(BaseSelfAttention):
                 attention_mask=attention_mask
                 )
 
-            if head_mask is not None:
-                context_layer = context_layer * head_mask[:, :, :1, :1]
             return self.reshape_output(context_layer)
 
         # Split input into global tokens and other tokens
@@ -606,8 +604,6 @@ class LSGBartEncoderAttention(BaseSelfAttention):
 
         # Merge global and local-sparse tokens
         context_layer = torch.cat([bos, context_layer], dim=-2)
-        if head_mask is not None:
-            context_layer = context_layer * head_mask[:, :, :1, :1]
         context_layer = self.reshape_output(context_layer)
         
         return context_layer
