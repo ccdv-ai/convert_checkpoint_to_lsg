@@ -16,6 +16,7 @@ from convert_models.barthez.convert_barthez_checkpoint import *
 from convert_models.bert.convert_bert_checkpoint import *
 from convert_models.camembert.convert_camembert_checkpoint import *
 from convert_models.distilbert.convert_distilbert_checkpoint import *
+from convert_models.electra.convert_electra_checkpoint import *
 from convert_models.mbart.convert_mbart_checkpoint import *
 from convert_models.pegasus.convert_pegasus_checkpoint import *
 from convert_models.roberta.convert_roberta_checkpoint import *
@@ -29,6 +30,7 @@ _AUTH_MODELS = {
     "bert": BertConversionScript,
     "camembert": CamembertConversionScript,
     "distilbert": DistilBertConversionScript,
+    "electra": ElectraConversionScript,
     "mbart": MBartConversionScript,
     "pegasus": PegasusConversionScript,
     "roberta": RobertaConversionScript,
@@ -98,6 +100,12 @@ class FileArguments:
             "help": "Add token_type_ids (0) to global embeddings if the model allows it"}
     )
 
+    do_test: bool = field(
+        default=False,
+        metadata={
+            "help": "Test the architecture of the new model"}
+    )
+
     seed: int = field(
         default=123,
         metadata={
@@ -140,11 +148,14 @@ def main():
             seed=args.seed
             )
         converter.process()
+
+        if args.do_test:
+            converter.run_test()
         
     else:
         s = "\n * " + "\n * ".join([k for k in _AUTH_MODELS.keys()])
         warnings.warn(f"Model type <{model_type}> can not be handled by this script. Model type must be one of: {s}")
     
-
+    
 if __name__ == "__main__":
     main()

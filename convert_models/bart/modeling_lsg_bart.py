@@ -57,7 +57,8 @@ class LSGBartConfig(BartConfig):
 
         if sparsity_type not in [None, "none", "norm", "lsh", "pooling", "stride", "block_stride"]:
             logger.warning(
-                "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride'], setting sparsity_type=None, computation will skip sparse attention")
+                "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride'], \
+                    setting sparsity_type=None, computation will skip sparse attention")
             self.sparsity_type = None
 
         if self.sparsity_type in ["stride", "block_stride"]:
@@ -73,13 +74,23 @@ class LSGBartConfig(BartConfig):
             self.num_global_tokens = 1
         elif self.num_global_tokens > 512:
             logger.warning(
-                "[WARNING CONFIG]: num_global_tokens > 512 is not compatible, setting num_global_tokens=512"
+                "[WARNING CONFIG]: num_global_tokens > 512 is not allowed, setting num_global_tokens=512"
             )
             self.num_global_tokens = 512
         
         if self.sparsity_factor > 0:
             assert self.block_size % self.sparsity_factor == 0, "[ERROR CONFIG]: block_size must be divisible by sparsity_factor"
             assert self.block_size//self.sparsity_factor >= 1, "[ERROR CONFIG]: make sure block_size >= sparsity_factor"
+            
+        if self.mask_first_token and not pool_with_global:
+            logger.warning(
+                "[WARNING CONFIG]: pool_with_global==False is not compatible with mask_first_token==True. Setting pool_with_global to True.")
+            self.pool_with_global = True
+        
+        if hasattr(self, "position_embedding_type"):
+            if self.position_embedding_type != "absolute":
+                logger.warning(
+                "[WARNING CONFIG]: LSG Attention is not compatible with relative positional embedding and will skip its computation. Set position_embedding_type='absolute' to remove this warning.")
             
         
 class BaseSelfAttention(nn.Module):
@@ -626,35 +637,14 @@ class LSGBartEncoderLayer(BartEncoderLayer):
             dropout=config.attention_dropout,
         )
 
-
-class LSGBartDecoderLayer(BartDecoderLayer):
-
-    def __init__(self, config):
-
-        super().__init__(config)
         
-
-class LSGBartClassificationHead(BartClassificationHead):
-    """Head for sentence-level classification tasks."""
-
-    def __init__(
-        self,
-        input_dim,
-        inner_dim,
-        num_classes,
-        pooler_dropout,
-        ):
-
-        super().__init__(input_dim, inner_dim, num_classes, pooler_dropout)
-
-
 class LSGBartPretrainedModel(BartPretrainedModel):
 
     config_class = LSGBartConfig
 
     def _set_gradient_checkpointing(self, module, value=False):
 
-        if isinstance(module, (BartDecoder, BartEncoder, LSGBartDecoder, LSGBartEncoder)):
+        if isinstance(module, (BartDecoder, BartEncoder, LSGBartEncoder)):
             module.gradient_checkpointing = value
 
 
@@ -885,43 +875,6 @@ class LSGBartEncoder(LSGBartPretrainedModel, BartEncoder):
         )
 
 
-class LSGBartDecoder(LSGBartPretrainedModel, BartDecoder):
-    """
-    Transformer decoder consisting of *config.decoder_layers* layers. Each layer is a :class:`LSGBartDecoderLayer`
-    Args:
-        config: BartConfig
-        embed_tokens (nn.Embedding): output embedding
-    """
-
-    def __init__(self, config, embed_tokens=None):
-        
-        LSGBartPretrainedModel.__init__(self, config)
-        
-        self.dropout = config.dropout
-        self.layerdrop = config.decoder_layerdrop
-        self.padding_idx = config.pad_token_id
-        self.max_target_positions = config.max_position_embeddings
-        self.embed_scale = math.sqrt(config.d_model) if config.scale_embedding else 1.0
-        self.adaptive = config.adaptive
-
-        if embed_tokens is not None:
-            self.embed_tokens = embed_tokens
-        else:
-            self.embed_tokens = nn.Embedding(config.vocab_size, config.d_model, self.padding_idx)
-
-        self.embed_positions = BartLearnedPositionalEmbedding(
-            config.max_position_embeddings,
-            config.d_model,
-        )
-        self.layers = nn.ModuleList([LSGBartDecoderLayer(config) for _ in range(config.decoder_layers)])
-        self.layernorm_embedding = nn.LayerNorm(config.d_model)
-
-        self.gradient_checkpointing = False
-
-        # Initialize weights and apply final processing
-        self.post_init()
-
-
 class LSGBartModel(LSGBartPretrainedModel, BartModel):
 
     def __init__(self, config):
@@ -935,7 +888,7 @@ class LSGBartModel(LSGBartPretrainedModel, BartModel):
         self.num_global_tokens = config.num_global_tokens
 
         self.encoder = LSGBartEncoder(config, self.shared)
-        self.decoder = LSGBartDecoder(config, self.shared)
+        self.decoder = BartDecoder(config, self.shared)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1048,7 +1001,7 @@ class LSGBartForSequenceClassification(LSGBartPretrainedModel, BartForSequenceCl
 
         LSGBartPretrainedModel.__init__(self, config, **kwargs)
         self.model = LSGBartModel(config)
-        self.classification_head = LSGBartClassificationHead(
+        self.classification_head = BartClassificationHead(
             config.d_model,
             config.d_model,
             config.num_labels,
@@ -1073,34 +1026,12 @@ class LSGBartForQuestionAnswering(LSGBartPretrainedModel, BartForQuestionAnsweri
         self.model._init_weights(self.qa_outputs)
 
 
-class LSGBartDecoderWrapper(LSGBartPretrainedModel):
-    """
-    This wrapper class is a helper class to correctly load pretrained checkpoints when the causal language model is
-    used in combination with the :class:`~transformers.EncoderDecoderModel` framework.
-    """
-
-    def __init__(self, config: LSGBartConfig):
-        super().__init__(config)
-        self.decoder = LSGBartDecoder(config)
-
-    def forward(self, *args, **kwargs):
-        return self.decoder(*args, **kwargs)
-
-
 class LSGBartForCausalLM(LSGBartPretrainedModel, BartForCausalLM):
 
     def __init__(self, config: LSGBartConfig):
 
-        config = copy.deepcopy(config)
-        config.is_decoder = True
-        config.is_encoder_decoder = False
         LSGBartPretrainedModel.__init__(self, config)
-        self.model = LSGBartDecoderWrapper(config)
-
-        self.lm_head = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-
-        # Initialize weights and apply final processing
-        self.post_init()
+        BartForCausalLM.__init__(self, config)
 
 
 def str_to_class(classname):

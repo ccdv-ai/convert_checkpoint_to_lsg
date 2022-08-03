@@ -1,24 +1,23 @@
-from .modeling_lsg_albert import *
+from .modeling_lsg_electra import *
 from ..conversion_utils import ConversionScript
 
-
-class AlbertConversionScript(ConversionScript):
+class ElectraConversionScript(ConversionScript):
 
     _ARCHITECTURE_TYPE_DICT = {
-        "AlbertModel": ("LSGAlbertModel", LSGAlbertModel),
-        "AlbertForMaskedLM": ("LSGAlbertForMaskedLM", LSGAlbertForMaskedLM),
-        "AlbertForPreTraining": ("LSGAlbertForPreTraining", LSGAlbertForPreTraining),
-        "AlbertForMaskedLM": ("LSGAlbertForMaskedLM", LSGAlbertForMaskedLM),
-        "AlbertForMultipleChoice": ("LSGAlbertForMultipleChoice", LSGAlbertForMultipleChoice),
-        "AlbertForQuestionAnswering": ("LSGAlbertForQuestionAnswering", LSGAlbertForQuestionAnswering),
-        "AlbertForSequenceClassification": ("LSGAlbertForSequenceClassification", LSGAlbertForSequenceClassification),
-        "AlbertForTokenClassification": ("LSGAlbertForTokenClassification", LSGAlbertForTokenClassification)
+        "ElectraModel": ("LSGElectraModel", LSGElectraModel),
+        "ElectraForCausalLM": ("LSGElectraForCausalLM", LSGElectraForCausalLM),
+        "ElectraForMaskedLM": ("LSGElectraForMaskedLM", LSGElectraForMaskedLM),
+        "ElectraForPreTraining": ("LSGElectraForPreTraining", LSGElectraForPreTraining),
+        "ElectraForMultipleChoice": ("LSGElectraForMultipleChoice", LSGElectraForMultipleChoice),
+        "ElectraForQuestionAnswering": ("LSGElectraForQuestionAnswering", LSGElectraForQuestionAnswering),
+        "ElectraForSequenceClassification": ("LSGElectraForSequenceClassification", LSGElectraForSequenceClassification),
+        "ElectraForTokenClassification": ("LSGElectraForTokenClassification", LSGElectraForTokenClassification)
     }
-
     _ARCHITECTURE_TYPE_DICT = {**{"LSG" + k: v for k, v in _ARCHITECTURE_TYPE_DICT.items()}, **_ARCHITECTURE_TYPE_DICT}
-    _BASE_ARCHITECTURE_TYPE = "AlbertModel"
-    _DEFAULT_ARCHITECTURE_TYPE = "AlbertForPreTraining"
-    _CONFIG_MODULE = LSGAlbertConfig
+
+    _BASE_ARCHITECTURE_TYPE = "ElectraModel"
+    _DEFAULT_ARCHITECTURE_TYPE = "ElectraForPreTraining"
+    _CONFIG_MODULE = LSGElectraConfig
 
     _DEFAULT_CONFIG_POSITIONAL_OFFSET = 0
     _DEFAULT_POSITIONAL_OFFSET = 0
@@ -29,7 +28,7 @@ class AlbertConversionScript(ConversionScript):
     def get_module(self, model, is_base_architecture):
         if is_base_architecture:
             return model
-        return model.albert
+        return model.electra
 
     def update_global_randomly(self, module_prefix, bos_id, stride, keep_first_global):
 
@@ -37,6 +36,7 @@ class AlbertConversionScript(ConversionScript):
         from torch.distributions.multivariate_normal import MultivariateNormal
 
         u = module_prefix.embeddings.word_embeddings.weight.clone()
+
         cov = torch.cov(u.T)
         m = MultivariateNormal(u.mean(dim=0), cov)
         w = m.sample((512,))
@@ -67,7 +67,7 @@ class AlbertConversionScript(ConversionScript):
         if self.use_token_ids:
             token_ids = module_prefix.embeddings.token_type_embeddings.weight.clone()
             positions += token_ids[0].unsqueeze(0)
-        
+
         if keep_first_global:
             module_prefix.embeddings.global_embeddings.weight.data[1:] = positions[1:]
         else:
@@ -88,7 +88,7 @@ class AlbertConversionScript(ConversionScript):
     def run_test(self):
         
         from transformers import AutoConfig, AutoTokenizer
-        
+
         initial_path = self.initial_model
         lsg_path = self.model_name
 
@@ -99,7 +99,7 @@ class AlbertConversionScript(ConversionScript):
         max_length = config.max_position_embeddings - 20
         hidden_size = config.embedding_size
 
-        self.run_models(lsg_path, max_length, hidden_size, text, AUTO_MAP, gradient_checkpointing=False)
+        self.run_models(lsg_path, max_length, hidden_size, text, AUTO_MAP)
         self.run_pipeline(lsg_path, initial_path, tokenizer, text)
 
     def run_pipeline(self, lsg_path, initial_path, tokenizer, text):
@@ -114,9 +114,9 @@ class AlbertConversionScript(ConversionScript):
         pipe = pipeline("fill-mask", model=model, tokenizer=tokenizer)
         pipe_initial = pipe(text)
   
-        print("\n\n" + "="*5 + " LSG PIPELINE " + "="*5 + "\n")
+        print("\n\n" + "="*5 + " LSG PIPELINE (for generator only)" + "="*5 + "\n")
         print(text)
         print(pipe_lsg[0])
-        print("\n\n" + "="*5 + " INITIAL PIPELINE " + "="*5 + "\n")
+        print("\n\n" + "="*5 + " INITIAL PIPELINE (for generator only)" + "="*5 + "\n")
         print(text)
         print(pipe_initial[0])

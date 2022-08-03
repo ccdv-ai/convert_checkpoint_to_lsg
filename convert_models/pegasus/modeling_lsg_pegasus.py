@@ -55,7 +55,8 @@ class LSGPegasusConfig(PegasusConfig):
 
         if sparsity_type not in [None, "none", "norm", "lsh", "pooling", "stride", "block_stride"]:
             logger.warning(
-                "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride'], setting sparsity_type=None, computation will skip sparse attention")
+                "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride'], \
+                    setting sparsity_type=None, computation will skip sparse attention")
             self.sparsity_type = None
 
         if self.sparsity_type in ["stride", "block_stride"]:
@@ -63,7 +64,7 @@ class LSGPegasusConfig(PegasusConfig):
                 logger.warning(
                 "[WARNING CONFIG]: sparsity_factor > encoder_attention_heads is not recommended for stride/block_stride sparsity"
             )
-
+        
         if self.num_global_tokens < 1:
             logger.warning(
                 "[WARNING CONFIG]: num_global_tokens < 1 is not compatible, setting num_global_tokens=1"
@@ -71,13 +72,23 @@ class LSGPegasusConfig(PegasusConfig):
             self.num_global_tokens = 1
         elif self.num_global_tokens > 512:
             logger.warning(
-                "[WARNING CONFIG]: num_global_tokens > 512 is not compatible, setting num_global_tokens=512"
+                "[WARNING CONFIG]: num_global_tokens > 512 is not allowed, setting num_global_tokens=512"
             )
             self.num_global_tokens = 512
-            
+        
         if self.sparsity_factor > 0:
             assert self.block_size % self.sparsity_factor == 0, "[ERROR CONFIG]: block_size must be divisible by sparsity_factor"
             assert self.block_size//self.sparsity_factor >= 1, "[ERROR CONFIG]: make sure block_size >= sparsity_factor"
+            
+        if self.mask_first_token and not pool_with_global:
+            logger.warning(
+                "[WARNING CONFIG]: pool_with_global==False is not compatible with mask_first_token==True. Setting pool_with_global to True.")
+            self.pool_with_global = True
+        
+        if hasattr(self, "position_embedding_type"):
+            if self.position_embedding_type != "absolute":
+                logger.warning(
+                "[WARNING CONFIG]: LSG Attention is not compatible with relative positional embedding and will skip its computation. Set position_embedding_type='absolute' to remove this warning.")
 
 
 class BaseSelfAttention(nn.Module):
@@ -661,21 +672,13 @@ class LSGPegasusEncoderLayer(PegasusEncoderLayer):
             dropout=config.attention_dropout,
         )
 
-
-# Copied from transformers.models.mbart.modeling_mbart.MBartDecoderLayer with MBart->Pegasus
-class LSGPegasusDecoderLayer(PegasusDecoderLayer):
-
-    def __init__(self, config: LSGPegasusConfig):
-
-        super().__init__(config)
         
-
 class LSGPegasusPreTrainedModel(PegasusPreTrainedModel):
 
     config_class = LSGPegasusConfig
 
     def _set_gradient_checkpointing(self, module, value=False):
-        if isinstance(module, (PegasusDecoder, PegasusEncoder, LSGPegasusDecoder, LSGPegasusEncoder)):
+        if isinstance(module, (PegasusDecoder, PegasusEncoder, LSGPegasusEncoder)):
             module.gradient_checkpointing = value
 
 
@@ -918,44 +921,6 @@ class LSGPegasusEncoder(LSGPegasusPreTrainedModel, PegasusEncoder):
         )
 
 
-class LSGPegasusDecoder(LSGPegasusPreTrainedModel, PegasusDecoder):
-    """
-    Transformer decoder consisting of *config.decoder_layers* layers. Each layer is a :class:`PegasusDecoderLayer`
-    Args:
-        config: PegasusConfig
-        embed_tokens (nn.Embedding): output embedding
-    """
-
-    def __init__(self, config: LSGPegasusConfig, embed_tokens: Optional[nn.Embedding] = None):
-        
-        LSGPegasusPreTrainedModel.__init__(self, config)
-
-        self.dropout = config.dropout
-        self.layerdrop = config.decoder_layerdrop
-        self.padding_idx = config.pad_token_id
-        self.max_target_positions = config.max_position_embeddings
-        self.embed_scale = math.sqrt(config.d_model) if config.scale_embedding else 1.0
-        self.adaptive = config.adaptive 
-
-        if embed_tokens is not None:
-            self.embed_tokens = embed_tokens
-        else:
-            self.embed_tokens = nn.Embedding(config.vocab_size, config.d_model, self.padding_idx)
-
-        self.embed_positions = LSGPegasusSinusoidalPositionalEmbedding(
-            config.max_position_embeddings,
-            config.d_model,
-            self.padding_idx,
-        )
-        self.layers = nn.ModuleList([LSGPegasusDecoderLayer(config) for _ in range(config.decoder_layers)])
-        self.layer_norm = nn.LayerNorm(config.d_model)
-
-        self.gradient_checkpointing = False
-
-        # Initialize weights and apply final processing
-        self.post_init()
-
-
 class LSGPegasusModel(LSGPegasusPreTrainedModel, PegasusModel):
 
     def __init__(self, config: LSGPegasusConfig):
@@ -967,7 +932,7 @@ class LSGPegasusModel(LSGPegasusPreTrainedModel, PegasusModel):
         self.pass_global_tokens_to_decoder = config.pass_global_tokens_to_decoder
         self.num_global_tokens = config.num_global_tokens
         self.encoder = LSGPegasusEncoder(config, self.shared)
-        self.decoder = LSGPegasusDecoder(config, self.shared)
+        self.decoder = PegasusDecoder(config, self.shared)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1074,6 +1039,7 @@ class LSGPegasusForConditionalGeneration(LSGPegasusPreTrainedModel, PegasusForCo
     ]
 
     def __init__(self, config: LSGPegasusConfig):
+
         LSGPegasusPreTrainedModel.__init__(self, config)
         self.model = LSGPegasusModel(config)
         self.register_buffer("final_logits_bias", torch.zeros((1, self.model.shared.num_embeddings)))
@@ -1084,18 +1050,15 @@ class LSGPegasusForConditionalGeneration(LSGPegasusPreTrainedModel, PegasusForCo
 
 
 # Copied from transformers.models.bart.modeling_bart.BartDecoderWrapper with Bart->Pegasus
-class LSGPegasusDecoderWrapper(LSGPegasusPreTrainedModel):
+class LSGPegasusDecoderWrapper(LSGPegasusPreTrainedModel, PegasusDecoderWrapper):
     """
     This wrapper class is a helper class to correctly load pretrained checkpoints when the causal language model is
     used in combination with the :class:`~transformers.EncoderDecoderModel` framework.
     """
 
     def __init__(self, config):
-        super().__init__(config)
-        self.decoder = LSGPegasusDecoder(config)
-
-    def forward(self, *args, **kwargs):
-        return self.decoder(*args, **kwargs)
+        LSGPegasusPreTrainedModel.__init__(self, config)
+        PegasusDecoderWrapper.__init__(self, config)
 
 
 class LSGPegasusForCausalLM(LSGPegasusPreTrainedModel, PegasusForCausalLM):

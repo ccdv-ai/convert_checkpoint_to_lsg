@@ -26,3 +26,4 @@ convert_checkpoint_old.py
 convert_models/*/__pycache__
 convert_models/xlm/*
 test_model.py
+test_class2.py

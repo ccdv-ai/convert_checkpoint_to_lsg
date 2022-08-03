@@ -84,3 +84,39 @@ class BarthezConversionScript(ConversionScript):
             dim=0)[:max_pos + self._DEFAULT_POSITIONAL_OFFSET]
 
         module_prefix.decoder.embed_positions.weight.data = new_position_embeddings_weights
+
+    def run_test(self):
+        
+        from transformers import AutoConfig, AutoTokenizer
+
+        initial_path = self.initial_model
+        lsg_path = self.model_name
+
+        config = AutoConfig.from_pretrained(lsg_path, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(lsg_path)
+        text = f"Paris est la {tokenizer.mask_token} de la France."
+
+        max_length = config.max_position_embeddings - 20
+        hidden_size = config.hidden_size
+
+        self.run_models(lsg_path, max_length, hidden_size, text, AUTO_MAP, is_encoder_decoder=True)
+        self.run_pipeline(lsg_path, initial_path, tokenizer, text)
+
+    def run_pipeline(self, lsg_path, initial_path, tokenizer, text):
+
+        from transformers import AutoModelForSeq2SeqLM, pipeline
+
+        model = AutoModelForSeq2SeqLM.from_pretrained(lsg_path, trust_remote_code=True)
+        pipe = pipeline("fill-mask", model=model, tokenizer=tokenizer)
+        pipe_lsg = pipe(text)
+
+        model = AutoModelForSeq2SeqLM.from_pretrained(initial_path, trust_remote_code=True)
+        pipe = pipeline("fill-mask", model=model, tokenizer=tokenizer)
+        pipe_initial = pipe(text)
+  
+        print("\n\n" + "="*5 + " LSG PIPELINE " + "="*5 + "\n")
+        print(text)
+        print(pipe_lsg[0])
+        print("\n\n" + "="*5 + " INITIAL PIPELINE " + "="*5 + "\n")
+        print(text)
+        print(pipe_initial[0])

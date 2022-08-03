@@ -49,10 +49,11 @@ class LSGDistilBertConfig(DistilBertConfig):
         self.sparse_block_size = sparse_block_size
         self.sparsity_factor = sparsity_factor
         self.sparsity_type = sparsity_type
-        
+
         if sparsity_type not in [None, "none", "norm", "lsh", "pooling", "stride", "block_stride"]:
             logger.warning(
-                "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride'], setting sparsity_type=None, computation will skip sparse attention")
+                "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride'], \
+                    setting sparsity_type=None, computation will skip sparse attention")
             self.sparsity_type = None
 
         if self.sparsity_type in ["stride", "block_stride"]:
@@ -60,7 +61,7 @@ class LSGDistilBertConfig(DistilBertConfig):
                 logger.warning(
                 "[WARNING CONFIG]: sparsity_factor > encoder_attention_heads is not recommended for stride/block_stride sparsity"
             )
-
+        
         if self.num_global_tokens < 1:
             logger.warning(
                 "[WARNING CONFIG]: num_global_tokens < 1 is not compatible, setting num_global_tokens=1"
@@ -68,13 +69,23 @@ class LSGDistilBertConfig(DistilBertConfig):
             self.num_global_tokens = 1
         elif self.num_global_tokens > 512:
             logger.warning(
-                "[WARNING CONFIG]: num_global_tokens > 512 is not compatible, setting num_global_tokens=512"
+                "[WARNING CONFIG]: num_global_tokens > 512 is not allowed, setting num_global_tokens=512"
             )
             self.num_global_tokens = 512
         
         if self.sparsity_factor > 0:
             assert self.block_size % self.sparsity_factor == 0, "[ERROR CONFIG]: block_size must be divisible by sparsity_factor"
             assert self.block_size//self.sparsity_factor >= 1, "[ERROR CONFIG]: make sure block_size >= sparsity_factor"
+            
+        if self.mask_first_token and not pool_with_global:
+            logger.warning(
+                "[WARNING CONFIG]: pool_with_global==False is not compatible with mask_first_token==True. Setting pool_with_global to True.")
+            self.pool_with_global = True
+        
+        if hasattr(self, "position_embedding_type"):
+            if self.position_embedding_type != "absolute":
+                logger.warning(
+                "[WARNING CONFIG]: LSG Attention is not compatible with relative positional embedding and will skip its computation. Set position_embedding_type='absolute' to remove this warning.")
         
 
 class LSGEmbeddings(Embeddings):
@@ -680,9 +691,7 @@ class LSGSelfAttention(BaseSelfAttention):
                 attention_mask=attention_mask, 
                 output_attentions=output_attentions
                 )
-        
-        #if head_mask is not None:
-        #    outputs = (outputs[0] * head_mask[:, :, :1, :1], ) + outputs[1:]
+
         return (self.out_lin(outputs[0]),) + outputs[1:]
 
     def causal_forward(
@@ -848,19 +857,15 @@ class LSGSelfAttention(BaseSelfAttention):
         return x.reshape(n, h, -1, chunk_size, d)
 
 
-class LSGTransformerBlock(nn.Module):
+class LSGTransformerBlock(TransformerBlock):
 
     def __init__(self, config):
 
-        nn.Module.__init__(self)
+        super().__init__(config)
 
         assert config.dim % config.n_heads == 0
 
         self.attention = LSGSelfAttention(config)
-        self.sa_layer_norm = nn.LayerNorm(normalized_shape=config.dim, eps=1e-12)
-
-        self.ffn = FFN(config)
-        self.output_layer_norm = nn.LayerNorm(normalized_shape=config.dim, eps=1e-12)
 
     def forward(self, x, attn_mask=None, head_mask=None, output_attentions=False):
         """
@@ -900,9 +905,8 @@ class LSGTransformer(Transformer):
 
     def __init__(self, config):
 
-        nn.Module.__init__(self)
+        super().__init__(config)
 
-        self.n_layers = config.n_layers
         self.layer = nn.ModuleList([LSGTransformerBlock(config) for _ in range(config.n_layers)])
 
 
@@ -947,6 +951,12 @@ class LSGDistilBertModel(LSGDistilBertPreTrainedModel, DistilBertModel):
         output_hidden_states=None,
         return_dict=None,
         ):
+
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         inputs_ = input_ids if input_ids is not None else inputs_embeds
         n, t = inputs_.size()[:2]

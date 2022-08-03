@@ -55,7 +55,8 @@ class LSGCamembertConfig(CamembertConfig):
 
         if sparsity_type not in [None, "none", "norm", "lsh", "pooling", "stride", "block_stride"]:
             logger.warning(
-                "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride'], setting sparsity_type=None, computation will skip sparse attention")
+                "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride'], \
+                    setting sparsity_type=None, computation will skip sparse attention")
             self.sparsity_type = None
 
         if self.sparsity_type in ["stride", "block_stride"]:
@@ -71,13 +72,23 @@ class LSGCamembertConfig(CamembertConfig):
             self.num_global_tokens = 1
         elif self.num_global_tokens > 512:
             logger.warning(
-                "[WARNING CONFIG]: num_global_tokens > 512 is not compatible, setting num_global_tokens=512"
+                "[WARNING CONFIG]: num_global_tokens > 512 is not allowed, setting num_global_tokens=512"
             )
             self.num_global_tokens = 512
         
         if self.sparsity_factor > 0:
             assert self.block_size % self.sparsity_factor == 0, "[ERROR CONFIG]: block_size must be divisible by sparsity_factor"
             assert self.block_size//self.sparsity_factor >= 1, "[ERROR CONFIG]: make sure block_size >= sparsity_factor"
+            
+        if self.mask_first_token and not pool_with_global:
+            logger.warning(
+                "[WARNING CONFIG]: pool_with_global==False is not compatible with mask_first_token==True. Setting pool_with_global to True.")
+            self.pool_with_global = True
+        
+        if hasattr(self, "position_embedding_type"):
+            if self.position_embedding_type != "absolute":
+                logger.warning(
+                "[WARNING CONFIG]: LSG Attention is not compatible with relative positional embedding and will skip its computation. Set position_embedding_type='absolute' to remove this warning.")
             
         
 class BaseSelfAttention(nn.Module):
@@ -436,39 +447,13 @@ class LSGCamembertEmbeddings(RobertaEmbeddings):
         return embeddings
 
 
-class LSGCamembertSelfOutput(RobertaSelfOutput):
-    
-    def __init__(self, config):
-        super().__init__(config)
-
-
 class LSGAttention(RobertaAttention):
 
     def __init__(self, config):
         
-        nn.Module.__init__(self)
+        super().__init__(config)
         
         self.self = LSGSelfAttention(config)
-        self.output = LSGCamembertSelfOutput(config)
-        self.pruned_heads = set()
-
-
-class LSGCamembertIntermediate(RobertaIntermediate):
-
-    def __init__(self, config):
-        super().__init__(config)
-
-
-class LSGCamembertOutput(RobertaOutput):
-
-    def __init__(self, config):
-        super().__init__(config)
-
-
-class LSGCamembertPooler(RobertaPooler):
-    
-    def __init__(self, config):
-        super().__init__(config)
 
 
 class LSGSelfAttention(BaseSelfAttention):
@@ -898,29 +883,21 @@ class LSGCamembertLayer(RobertaLayer):
     
     def __init__(self, config):
 
-        nn.Module.__init__(self)
+        super().__init__(config)
 
-        self.chunk_size_feed_forward = config.chunk_size_feed_forward
-        self.seq_len_dim = 1
         self.attention = LSGAttention(config)
-        self.is_decoder = config.is_decoder
-        self.add_cross_attention = config.add_cross_attention
         if self.add_cross_attention:
             assert self.is_decoder, f"{self} should be used as a decoder model if cross attention is added"
             self.crossattention = LSGAttention(config)
-        self.intermediate = LSGCamembertIntermediate(config)
-        self.output = LSGCamembertOutput(config)
 
 
 class LSGCamembertEncoder(RobertaEncoder):
 
     def __init__(self, config):
 
-        nn.Module.__init__(self)
+        super().__init__(config)
 
-        self.config = config
         self.layer = nn.ModuleList([LSGCamembertLayer(config) for _ in range(config.num_hidden_layers)])
-        self.gradient_checkpointing = False
 
 
 class LSGCamembertPreTrainedModel(RobertaPreTrainedModel):
@@ -945,7 +922,7 @@ class LSGCamembertModel(LSGCamembertPreTrainedModel, RobertaModel):
     config_class = LSGCamembertConfig
 
 
-    def __init__(self, config, add_pooling_layer=False):
+    def __init__(self, config, add_pooling_layer=True):
         
         LSGCamembertPreTrainedModel.__init__(self, config)
 
@@ -961,7 +938,7 @@ class LSGCamembertModel(LSGCamembertPreTrainedModel, RobertaModel):
 
         self.embeddings = LSGCamembertEmbeddings(config)
         self.encoder = LSGCamembertEncoder(config)
-        self.pooler = LSGCamembertPooler(config) if add_pooling_layer else None
+        self.pooler = RobertaPooler(config) if add_pooling_layer else None
 
         if config.add_cross_attention:
             logger.warning(
@@ -987,6 +964,12 @@ class LSGCamembertModel(LSGCamembertPreTrainedModel, RobertaModel):
         output_hidden_states=None, 
         return_dict=None
         ):
+
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         inputs_ = input_ids if input_ids is not None else inputs_embeds
         n, t = inputs_.size()[:2]
@@ -1085,7 +1068,7 @@ class LSGCamembertForCausalLM(LSGCamembertPreTrainedModel, RobertaForCausalLM):
             logger.warning("If you want to use `LSGCamembertLMHeadModel` as a standalone, add `is_decoder=True.`")
 
         self.roberta = LSGCamembertModel(config, add_pooling_layer=False)
-        self.lm_head = LSGCamembertLMHead(config)
+        self.lm_head = RobertaLMHead(config)
 
         # The LM head weights require special treatment only when they are tied with the word embeddings
         self.update_keys_to_ignore(config, ["lm_head.decoder.weight"])
@@ -1115,20 +1098,13 @@ class LSGCamembertForMaskedLM(LSGCamembertPreTrainedModel, RobertaForMaskedLM):
             )
 
         self.roberta = LSGCamembertModel(config, add_pooling_layer=False)
-        self.lm_head = LSGCamembertLMHead(config)
+        self.lm_head = RobertaLMHead(config)
         
         # The LM head weights require special treatment only when they are tied with the word embeddings
         self.update_keys_to_ignore(config, ["lm_head.decoder.weight"])
 
         # Initialize weights and apply final processing
         self.post_init()
-
-
-class LSGCamembertLMHead(RobertaLMHead):
-    """LSG Head for masked language modeling."""
-
-    def __init__(self, config):
-        super().__init__(config)
 
 
 class LSGCamembertForSequenceClassification(LSGCamembertPreTrainedModel, RobertaForSequenceClassification):
@@ -1147,19 +1123,12 @@ class LSGCamembertForSequenceClassification(LSGCamembertPreTrainedModel, Roberta
         self.config = config
 
         self.roberta = LSGCamembertModel(config, add_pooling_layer=False)
-        self.classifier = LSGCamembertClassificationHead(config)
+        self.classifier = RobertaClassificationHead(config)
 
         # Initialize weights and apply final processing
         self.post_init()
 
 
-class LSGCamembertClassificationHead(RobertaClassificationHead):
-    """Head for sentence-level classification tasks."""
-
-    def __init__(self, config):
-        super().__init__(config)
-
-        
 class LSGCamembertForMultipleChoice(LSGCamembertPreTrainedModel, RobertaForMultipleChoice):
     """
     This class overrides :class:`~transformers.CamembertForMultipleChoice`. Please check the superclass for the

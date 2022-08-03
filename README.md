@@ -20,12 +20,14 @@ Use `convert_checkpoint.py` with these model types (model_type from config.json)
 * "bert"
 * "camembert"
 * "distilbert"
+* "electra"
 * "mbart" (not tested extensively, encoder attention modified only)
 * "pegasus" (not tested extensively, encoder attention modified only)
 * "roberta"
 * "xlm-roberta"
 
-Model architecture is infered from config but you can specify a different one if the config is wrong (can happen for BART models), see  `python convert_checkpoint.py --help`
+Model architecture is infered from config but you can specify a different one if the config is wrong (can happen for BART models), see  `python convert_checkpoint.py --help`. \
+The architecture can be tested with `--do_test` (experimental).
 
 
 BERT example (`BertForPretraining`):

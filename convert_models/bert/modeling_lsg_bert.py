@@ -53,10 +53,11 @@ class LSGBertConfig(BertConfig):
         self.sparse_block_size = sparse_block_size
         self.sparsity_factor = sparsity_factor
         self.sparsity_type = sparsity_type
-        
+
         if sparsity_type not in [None, "none", "norm", "lsh", "pooling", "stride", "block_stride"]:
             logger.warning(
-                "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride'], setting sparsity_type=None, computation will skip sparse attention")
+                "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride'], \
+                    setting sparsity_type=None, computation will skip sparse attention")
             self.sparsity_type = None
 
         if self.sparsity_type in ["stride", "block_stride"]:
@@ -64,7 +65,7 @@ class LSGBertConfig(BertConfig):
                 logger.warning(
                 "[WARNING CONFIG]: sparsity_factor > encoder_attention_heads is not recommended for stride/block_stride sparsity"
             )
-
+        
         if self.num_global_tokens < 1:
             logger.warning(
                 "[WARNING CONFIG]: num_global_tokens < 1 is not compatible, setting num_global_tokens=1"
@@ -72,13 +73,23 @@ class LSGBertConfig(BertConfig):
             self.num_global_tokens = 1
         elif self.num_global_tokens > 512:
             logger.warning(
-                "[WARNING CONFIG]: num_global_tokens > 512 is not compatible, setting num_global_tokens=512"
+                "[WARNING CONFIG]: num_global_tokens > 512 is not allowed, setting num_global_tokens=512"
             )
             self.num_global_tokens = 512
         
         if self.sparsity_factor > 0:
             assert self.block_size % self.sparsity_factor == 0, "[ERROR CONFIG]: block_size must be divisible by sparsity_factor"
             assert self.block_size//self.sparsity_factor >= 1, "[ERROR CONFIG]: make sure block_size >= sparsity_factor"
+            
+        if self.mask_first_token and not pool_with_global:
+            logger.warning(
+                "[WARNING CONFIG]: pool_with_global==False is not compatible with mask_first_token==True. Setting pool_with_global to True.")
+            self.pool_with_global = True
+        
+        if hasattr(self, "position_embedding_type"):
+            if self.position_embedding_type != "absolute":
+                logger.warning(
+                "[WARNING CONFIG]: LSG Attention is not compatible with relative positional embedding and will skip its computation. Set position_embedding_type='absolute' to remove this warning.")
         
         
 class BaseSelfAttention(nn.Module):
@@ -695,8 +706,6 @@ class LSGSelfAttention(BaseSelfAttention):
                 output_attentions=output_attentions
                 )
         
-        #if head_mask is not None:
-        #    outputs = (outputs[0] * head_mask[:, :, :1, :1], ) + outputs[1:]
         return outputs
 
     def causal_forward(
@@ -862,12 +871,6 @@ class LSGSelfAttention(BaseSelfAttention):
         return x.reshape(n, h, -1, chunk_size, d)
 
 
-class LSGBertSelfOutput(BertSelfOutput):
-    
-    def __init__(self, config):
-        super().__init__(config)
-
-
 class LSGAttention(BertAttention):
 
     def __init__(self, config):
@@ -875,106 +878,30 @@ class LSGAttention(BertAttention):
         nn.Module.__init__(self)
         
         self.self = LSGSelfAttention(config)
-        self.output = LSGBertSelfOutput(config)
+        self.output = BertSelfOutput(config)
         self.pruned_heads = set()
-
-
-class LSGBertIntermediate(BertIntermediate):
-
-    def __init__(self, config):
-        super().__init__(config)
-
-
-class LSGBertOutput(BertOutput):
-
-    def __init__(self, config):
-        super().__init__(config)
 
 
 class LSGBertLayer(BertLayer):
     
     def __init__(self, config):
 
-        nn.Module.__init__(self)
+        super().__init__(config)
 
-        self.chunk_size_feed_forward = config.chunk_size_feed_forward
-        self.seq_len_dim = 1
         self.attention = LSGAttention(config)
-        self.is_decoder = config.is_decoder
-        self.add_cross_attention = config.add_cross_attention
         if self.add_cross_attention:
             if not self.is_decoder:
                 assert self.is_decoder, f"{self} should be used as a decoder model if cross attention is added"
             self.crossattention = LSGAttention(config)
-        self.intermediate = LSGBertIntermediate(config)
-        self.output = LSGBertOutput(config)
 
 
 class LSGBertEncoder(BertEncoder):
 
     def __init__(self, config):
 
-        nn.Module.__init__(self)
+        super().__init__(config)
 
-        self.config = config
         self.layer = nn.ModuleList([LSGBertLayer(config) for _ in range(config.num_hidden_layers)])
-        self.gradient_checkpointing = False
-
-
-class LSGBertPooler(BertPooler):
-    
-    def __init__(self, config):
-        super().__init__(config)
-
-
-class LSGBertPredictionHeadTransform(BertPredictionHeadTransform):
-
-    def __init__(self, config):
-        super().__init__(config)
-
-
-class LSGBertLMPredictionHead(BertLMPredictionHead):
-
-    def __init__(self, config):
-
-        nn.Module.__init__(self)
-        
-        self.transform = LSGBertPredictionHeadTransform(config)
-
-        # The output weights are the same as the input embeddings, but there is
-        # an output-only bias for each token.
-        self.decoder = nn.Linear(config.hidden_size, config.vocab_size, bias=False)
-
-        self.bias = nn.Parameter(torch.zeros(config.vocab_size))
-
-        # Need a link between the two variables so that the bias is correctly resized with `resize_token_embeddings`
-        self.decoder.bias = self.bias
-
-
-class LSGBertOnlyMLMHead(BertOnlyMLMHead):
-    """LSG Head for masked language modeling."""
-
-    def __init__(self, config):
-        
-        nn.Module.__init__(self)
-
-        self.predictions = LSGBertLMPredictionHead(config)
-
-
-class LSGBertOnlyNSPHead(BertOnlyNSPHead):
-
-    def __init__(self, config):
-        super().__init__(config)
-
-
-class LSGBertPreTrainingHeads(BertPreTrainingHeads):
-
-    def __init__(self, config):
-        
-        nn.Module.__init__(self)
-    
-        self.predictions = BertLMPredictionHead(config)
-        self.seq_relationship = nn.Linear(config.hidden_size, 2)
 
 
 class LSGBertPreTrainedModel(BertPreTrainedModel):
@@ -1015,7 +942,7 @@ class LSGBertModel(LSGBertPreTrainedModel, BertModel):
 
         self.embeddings = LSGBertEmbeddings(config)
         self.encoder = LSGBertEncoder(config)
-        self.pooler = LSGBertPooler(config) if add_pooling_layer else None
+        self.pooler = BertPooler(config) if add_pooling_layer else None
 
         if config.add_cross_attention:
             logger.warning(
@@ -1042,6 +969,12 @@ class LSGBertModel(LSGBertPreTrainedModel, BertModel):
         return_dict=None
         ):
 
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        
         inputs_ = input_ids if input_ids is not None else inputs_embeds
         n, t = inputs_.size()[:2]
 
@@ -1126,33 +1059,33 @@ class LSGBertModel(LSGBertPreTrainedModel, BertModel):
         return extended_attention_mask
 
 
-class LSGBertForPreTraining(LSGBertPreTrainedModel):
+class LSGBertForPreTraining(LSGBertPreTrainedModel, BertForPreTraining):
 
     def __init__(self, config):
         
-        super().__init__(config)
+        LSGBertPreTrainedModel.__init__(self, config)
 
         self.bert = LSGBertModel(config)
-        self.cls = LSGBertPreTrainingHeads(config)
+        self.cls = BertPreTrainingHeads(config)
         
         # Initialize weights and apply final processing
         self.post_init()
 
 
-class LSGBertLMHeadModel(BertLMHeadModel):
+class LSGBertLMHeadModel(LSGBertPreTrainedModel, BertLMHeadModel):
 
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
     _keys_to_ignore_on_load_missing = [r"position_ids", r"predictions.decoder.bias"]
 
     def __init__(self, config):
         
-        BertPreTrainedModel.__init__(self, config)
+        LSGBertPreTrainedModel.__init__(self, config)
 
         if not config.is_decoder:
             logger.warning("If you want to use `BertLMHeadModel` as a standalone, add `is_decoder=True.`")
 
         self.bert = LSGBertModel(config, add_pooling_layer=False)
-        self.cls = LSGBertOnlyMLMHead(config)
+        self.cls = BertOnlyMLMHead(config)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1179,7 +1112,7 @@ class LSGBertForMaskedLM(LSGBertPreTrainedModel, BertForMaskedLM):
             )
 
         self.bert = LSGBertModel(config, add_pooling_layer=False)
-        self.cls = LSGBertOnlyMLMHead(config)
+        self.cls = BertOnlyMLMHead(config)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1192,7 +1125,7 @@ class LSGBertForNextSentencePrediction(LSGBertPreTrainedModel, BertForNextSenten
         LSGBertPreTrainedModel.__init__(self, config)
 
         self.bert = LSGBertModel(config)
-        self.cls = LSGBertOnlyNSPHead(config)
+        self.cls = BertOnlyNSPHead(config)
         
         # Initialize weights and apply final processing
         self.post_init()

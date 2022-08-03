@@ -1,28 +1,29 @@
 from logging import warn
-from transformers.models.albert.modeling_albert import *
+from transformers.models.electra.modeling_electra import *
 import torch
 import torch.nn as nn
-from transformers.models.albert.configuration_albert import AlbertConfig
+from transformers.models.electra.configuration_electra import ElectraConfig
 import sys
 
 AUTO_MAP = {
-        "AutoModel": "modeling_lsg_albert.LSGAlbertModel",
-        "AutoModelForMaskedLM": "modeling_lsg_albert.LSGAlbertForMaskedLM",
-        "AutoModelForPreTraining": "modeling_lsg_albert.LSGAlbertForPreTraining",
-        "AutoModelForMultipleChoice": "modeling_lsg_albert.LSGAlbertForMultipleChoice",
-        "AutoModelForQuestionAnswering": "modeling_lsg_albert.LSGAlbertForQuestionAnswering",
-        "AutoModelForSequenceClassification": "modeling_lsg_albert.LSGAlbertForSequenceClassification",
-        "AutoModelForTokenClassification": "modeling_lsg_albert.LSGAlbertForTokenClassification"
+        "AutoModel": "modeling_lsg_electra.LSGElectraModel",
+        "AutoModelForCausalLM": "modeling_lsg_electra.LSGElectraForCausalLM",
+        "AutoModelForMaskedLM": "modeling_lsg_electra.LSGElectraForMaskedLM",
+        "AutoModelForPreTraining": "modeling_lsg_electra.LSGElectraForPreTraining",
+        "AutoModelForMultipleChoice": "modeling_lsg_electra.LSGElectraForMultipleChoice",
+        "AutoModelForQuestionAnswering": "modeling_lsg_electra.LSGElectraForQuestionAnswering",
+        "AutoModelForSequenceClassification": "modeling_lsg_electra.LSGElectraForSequenceClassification",
+        "AutoModelForTokenClassification": "modeling_lsg_electra.LSGElectraForTokenClassification"
     }
 
-class LSGAlbertConfig(AlbertConfig):
+class LSGElectraConfig(ElectraConfig):
     """
-    This class overrides :class:`~transformers.AlbertConfig`. Please check the superclass for the appropriate
+    This class overrides :class:`~transformers.ElectraConfig`. Please check the superclass for the appropriate
     documentation alongside usage examples.
     """
 
     base_model_prefix = "lsg"
-    model_type = "albert"
+    model_type = "electra"
 
     def __init__(
         self,
@@ -38,7 +39,7 @@ class LSGAlbertConfig(AlbertConfig):
         sparsity_type="norm",
         **kwargs
         ):
-        """Constructs LSGAlbertConfig."""
+        """Constructs LSGElectraConfig."""
         super().__init__(**kwargs)
 
         self.adaptive = adaptive
@@ -89,8 +90,8 @@ class LSGAlbertConfig(AlbertConfig):
             if self.position_embedding_type != "absolute":
                 logger.warning(
                 "[WARNING CONFIG]: LSG Attention is not compatible with relative positional embedding and will skip its computation. Set position_embedding_type='absolute' to remove this warning.")
-
-
+        
+        
 class BaseSelfAttention(nn.Module):
     
     def init_modules(self, config):
@@ -153,7 +154,7 @@ class BaseAttentionProduct(nn.Module):
         del key_layer
 
         if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in AlbertModel forward() function)
+            # Apply the attention mask is (precomputed for all layers in ElectraModel forward() function)
             attention_scores = attention_scores + attention_mask
             del attention_mask
 
@@ -188,7 +189,7 @@ class CausalAttentionProduct(nn.Module):
         del key_layer
 
         if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in AlbertModel forward() function)
+            # Apply the attention mask is (precomputed for all layers in ElectraModel forward() function)
             attention_scores = attention_scores + attention_mask
 
             # Add causal mask
@@ -348,7 +349,7 @@ class LSGAttentionProduct(nn.Module):
 
         # Pad before block reshaping
         if is_attn_mask:
-            pad_value = torch.finfo(hidden_states.dtype).min  
+            pad_value = torch.finfo(hidden_states.dtype).min 
             hidden_states = hidden_states.transpose(-1, -2)
         else: 
             pad_value = 0
@@ -391,14 +392,11 @@ class LSGAttentionProduct(nn.Module):
         return x.reshape(*x.size()[:-2], n_blocks, -1, d)
 
 
-class LSGAlbertEmbeddings(AlbertEmbeddings):
-    """
-    Construct the embeddings from word, position and token_type embeddings.
-    """
+class LSGElectraEmbeddings(ElectraEmbeddings):
 
     def __init__(self, config):
         super().__init__(config)
-        
+
         self.num_global_tokens = config.num_global_tokens
 
         # Hardcoded but partially trained
@@ -407,57 +405,52 @@ class LSGAlbertEmbeddings(AlbertEmbeddings):
         self.block_size = config.block_size
 
     def forward(
-            self,
-            input_ids=None,
-            token_type_ids=None,
-            position_ids=None,
-            inputs_embeds=None,
-            past_key_values_length=0,
-        ) -> torch.Tensor:
-            if input_ids is not None:
-                input_shape = input_ids.size()
+        self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None, past_key_values_length=0
+    ):
+        if input_ids is not None:
+            input_shape = input_ids.size()
+        else:
+            input_shape = inputs_embeds.size()[:-1]
+
+        seq_length = input_shape[1]
+
+        if position_ids is None:
+            position_ids = self.position_ids[:, past_key_values_length : seq_length + past_key_values_length]
+
+        # Setting the token_type_ids to the registered buffer in constructor where it is all zeros, which usually occurs
+        # when its auto-generated, registered buffer helps users when tracing the model without passing token_type_ids, solves
+        # issue #5664
+        if token_type_ids is None:
+            if hasattr(self, "token_type_ids"):
+                buffered_token_type_ids = self.token_type_ids[:, :seq_length]
+                buffered_token_type_ids_expanded = buffered_token_type_ids.expand(input_shape[0], seq_length)
+                token_type_ids = buffered_token_type_ids_expanded
             else:
-                input_shape = inputs_embeds.size()[:-1]
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
 
-            seq_length = input_shape[1]
+        if inputs_embeds is None:
+            inputs_embeds = self.word_embeddings(input_ids)
+        token_type_embeddings = self.token_type_embeddings(token_type_ids[:, :seq_length])
 
-            if position_ids is None:
-                position_ids = self.position_ids[:, past_key_values_length : seq_length + past_key_values_length]
+        embeddings = inputs_embeds + token_type_embeddings
+        if self.position_embedding_type == "absolute":
+            position_embeddings = self.position_embeddings(position_ids[:, :seq_length])
+            embeddings += position_embeddings
 
-            # Setting the token_type_ids to the registered buffer in constructor where it is all zeros, which usually occurs
-            # when its auto-generated, registered buffer helps users when tracing the model without passing token_type_ids, solves
-            # issue #5664
-            if token_type_ids is None:
-                if hasattr(self, "token_type_ids"):
-                    buffered_token_type_ids = self.token_type_ids[:, :seq_length]
-                    buffered_token_type_ids_expanded = buffered_token_type_ids.expand(input_shape[0], seq_length)
-                    token_type_ids = buffered_token_type_ids_expanded
-                else:
-                    token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
-
-            if inputs_embeds is None:
-                inputs_embeds = self.word_embeddings(input_ids)
-            token_type_embeddings = self.token_type_embeddings(token_type_ids)
-
-            embeddings = inputs_embeds + token_type_embeddings
-            if self.position_embedding_type == "absolute":
-                position_embeddings = self.position_embeddings(position_ids)
-                embeddings += position_embeddings
-
-            n, t, d = embeddings.size()
+        #if self.num_global_tokens < 0:
+        n, t, d = embeddings.size()
         
-            # Add global_tokens
-            indexes = torch.arange(self.num_global_tokens, device=embeddings.device).reshape(1, -1)
-            global_embeddings = self.global_embeddings(indexes) 
-            embeddings = torch.cat([global_embeddings.expand(n, -1, d), embeddings], dim=-2)
+        # Add global_tokens
+        indexes = torch.arange(self.num_global_tokens, device=embeddings.device).reshape(1, -1)
+        global_embeddings = self.global_embeddings(indexes) 
+        embeddings = torch.cat([global_embeddings.expand(n, -1, d), embeddings], dim=-2)
         
+        embeddings = self.LayerNorm(embeddings)
+        embeddings = self.dropout(embeddings)
+        return embeddings
 
-            embeddings = self.LayerNorm(embeddings)
-            embeddings = self.dropout(embeddings)
-            return embeddings
 
-
-class LSGAttention(BaseSelfAttention):
+class LSGSelfAttention(BaseSelfAttention):
     '''
     Compute local attention with overlapping blocs
     Use global attention for tokens with highest norm
@@ -466,10 +459,6 @@ class LSGAttention(BaseSelfAttention):
         super().__init__()
 
         self.init_modules(config)
-
-        self.output_dropout = nn.Dropout(config.hidden_dropout_prob)
-        self.dense = nn.Linear(config.hidden_size, config.hidden_size)
-        self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
 
         self.block_size = config.block_size
         self.sparse_block_size = config.sparse_block_size
@@ -646,24 +635,145 @@ class LSGAttention(BaseSelfAttention):
         hidden_states,
         attention_mask=None,
         head_mask=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        past_key_value=None,
         output_attentions=False,
         ):
 
-        query_layer, key_layer, value_layer = self.project_QKV(hidden_states)
-        outputs = self.not_causal_forward(
-            query_layer,
-            key_layer,
-            value_layer, 
-            attention_mask=attention_mask, 
-            output_attentions=output_attentions
-            )
-        
-        context = outputs[0]
-        context = self.dense(context)
-        context = self.output_dropout(context)
-        context = self.LayerNorm(context + hidden_states)
+        query_layer = self.query(hidden_states)
 
-        return (context, ) + outputs[1:]
+        # If this is instantiated as a cross-attention module, the keys
+        # and values come from an encoder; the attention mask needs to be
+        # such that the encoder's padding tokens are not attended to.
+        is_cross_attention = encoder_hidden_states is not None
+
+        if is_cross_attention and past_key_value is not None:
+            # reuse k,v, cross_attentions
+            key_layer = past_key_value[0]
+            value_layer = past_key_value[1]
+            attention_mask = encoder_attention_mask
+        elif is_cross_attention:
+            key_layer = self.transpose_for_scores(self.key(encoder_hidden_states))
+            value_layer = self.transpose_for_scores(self.value(encoder_hidden_states))
+            attention_mask = encoder_attention_mask
+        elif past_key_value is not None:
+            key_layer = self.transpose_for_scores(self.key(hidden_states))
+            value_layer = self.transpose_for_scores(self.value(hidden_states))
+            key_layer = torch.cat([past_key_value[0], key_layer], dim=2)
+            value_layer = torch.cat([past_key_value[1], value_layer], dim=2)
+        else:
+            key_layer = self.transpose_for_scores(self.key(hidden_states))
+            value_layer = self.transpose_for_scores(self.value(hidden_states))
+
+        query_layer = self.transpose_for_scores(query_layer)
+
+        if self.is_decoder:
+            # if cross_attention save Tuple(torch.Tensor, torch.Tensor) of all cross attention key/value_states.
+            # Further calls to cross_attention layer can then reuse all cross-attention
+            # key/value_states (first "if" case)
+            # if uni-directional self-attention (decoder) save Tuple(torch.Tensor, torch.Tensor) of
+            # all previous decoder key/value_states. Further calls to uni-directional self-attention
+            # can concat previous decoder key/value_states to current projected key/value_states (third "elif" case)
+            # if encoder bi-directional self-attention `past_key_value` is always `None`
+            past_key_value = (key_layer, value_layer)
+
+            if is_cross_attention:
+                outputs = self.cross_attention_forward(
+                    query_layer=query_layer, 
+                    key_layer=key_layer, 
+                    value_layer=value_layer, 
+                    attention_mask=attention_mask,
+                    output_attentions=output_attentions
+                    )
+            else:
+                outputs = self.causal_forward(
+                    query_layer,
+                    key_layer,
+                    value_layer,
+                    attention_mask=attention_mask,
+                    output_attentions=output_attentions,
+                )
+
+            outputs = outputs + ((key_layer, value_layer),)
+            
+        else:
+            outputs = self.not_causal_forward(
+                query_layer,
+                key_layer,
+                value_layer, 
+                attention_mask=attention_mask, 
+                output_attentions=output_attentions
+                )
+        
+        return outputs
+
+    def causal_forward(
+        self,
+        query_layer,
+        key_layer,
+        value_layer,
+        attention_mask=None,
+        output_attentions=False,
+        ):
+
+        n, h, t, d = key_layer.size()
+
+        # Cat global mask
+        attention_mask = torch.nn.functional.pad(attention_mask, (self.num_global_tokens, 0), value=0)
+
+        # Split input into global tokens and other tokens
+        split = (self.num_global_tokens, t - self.num_global_tokens)
+        global_query, query_layer = query_layer.split(split, dim=-2)
+
+        # Use normal causal attention if local attention covers every tokens
+        if t <= 2 * self.block_size + self.num_global_tokens:
+            context_layer = self.causal_attention(
+                query_layer=query_layer, 
+                key_layer=key_layer, 
+                value_layer=value_layer, 
+                attention_mask=attention_mask,
+                causal_shape=(t - self.num_global_tokens, t - self.num_global_tokens)
+                )
+            
+            context_layer = torch.cat([global_query, context_layer], dim=-2)
+            return (self.reshape_output(context_layer), )
+        
+        # Split K Q M on global and non global
+        global_key, key_layer = key_layer.split(split, dim=-2)
+        global_value, value_layer = value_layer.split(split, dim=-2)
+        global_mask, attention_mask = attention_mask.split(split, dim=-1)
+        
+        n, h, t, d = key_layer.size()
+
+        # Get sparse idx
+        sparse_key, sparse_value, sparse_mask = (None, None, None)
+        if self.sparse_block_size and self.sparsity_factor > 0:
+            sparse_key, sparse_value, sparse_mask = self.get_sparse_elements(key_layer, value_layer, attention_mask)
+        
+        # Expand masks on heads
+        attention_mask = attention_mask.expand(-1, h, -1, -1)
+        global_mask = global_mask.expand(-1, h, -1, -1)
+
+        # Compute dot product attention
+        context_layer = self.attention(
+            query_layer, 
+            key_layer, 
+            value_layer, 
+            attention_mask,
+            sparse_key=sparse_key,
+            sparse_value=sparse_value,
+            sparse_mask=sparse_mask,
+            global_key=global_key,
+            global_value=global_value,
+            global_mask=global_mask
+            )
+
+        # Merge pseudo global (causal) and local-sparse tokens
+        context_layer = torch.cat([global_query, context_layer], dim=-2)
+        context_layer = self.reshape_output(context_layer)
+
+        return (context_layer,)
 
     def not_causal_forward(
         self,
@@ -738,74 +848,100 @@ class LSGAttention(BaseSelfAttention):
         
         return (context_layer,)
 
+    def cross_attention_forward(
+        self,
+        query_layer,
+        key_layer,
+        value_layer,
+        attention_mask=None,
+        output_attentions=False,
+        ):
+
+        context_layer = self.full_attention(
+            query_layer=query_layer, 
+            key_layer=key_layer, 
+            value_layer=value_layer, 
+            attention_mask=attention_mask
+        )
+        return (self.reshape_output(context_layer), )
+
     def chunk(self, x, chunk_size):
 
         n, h, t, d = x.size()
         return x.reshape(n, h, -1, chunk_size, d)
 
 
-class LSGAlbertLayer(AlbertLayer):
+class LSGAttention(ElectraAttention):
 
     def __init__(self, config):
+
+        nn.Module.__init__(self)
+        
+        self.self = LSGSelfAttention(config)
+        self.output = ElectraSelfOutput(config)
+        self.pruned_heads = set()
+
+
+class LSGElectraLayer(ElectraLayer):
+    
+    def __init__(self, config):
+
         super().__init__(config)
 
         self.attention = LSGAttention(config)
+        if self.add_cross_attention:
+            if not self.is_decoder:
+                raise ValueError(f"{self} should be used as a decoder model if cross attention is added")
+            self.crossattention = LSGAttention(config, position_embedding_type="absolute")
 
 
-class LSGAlbertLayerGroup(AlbertLayerGroup):
-
-    def __init__(self, config):
-        
-        nn.Module.__init__(self)
-
-        self.albert_layers = nn.ModuleList([LSGAlbertLayer(config) for _ in range(config.inner_group_num)])
-
-
-class LSGAlbertTransformer(AlbertTransformer):
+class LSGElectraEncoder(ElectraEncoder):
 
     def __init__(self, config):
 
         super().__init__(config)
 
-        self.albert_layer_groups = nn.ModuleList([LSGAlbertLayerGroup(config) for _ in range(config.num_hidden_groups)])
+        self.layer = nn.ModuleList([LSGElectraLayer(config) for _ in range(config.num_hidden_layers)])
 
 
-class LSGAlbertPreTrainedModel(PreTrainedModel):
+class LSGElectraPreTrainedModel(ElectraPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
     models.
     """
 
-    config_class = LSGAlbertConfig
-    load_tf_weights = load_tf_weights_in_albert
-    base_model_prefix = "albert"
+    config_class = LSGElectraConfig
+    load_tf_weights = load_tf_weights_in_electra
+    base_model_prefix = "electra"
+    supports_gradient_checkpointing = True
     _keys_to_ignore_on_load_missing = [r"position_ids"]
+    _keys_to_ignore_on_load_unexpected = [r"electra.embeddings_project.weight", r"electra.embeddings_project.bias"]
 
-    def _init_weights(self, module):
-        """Initialize the weights."""
-        if isinstance(module, nn.Linear):
-            # Slightly different from the TF version which uses truncated_normal for initialization
-            # cf https://github.com/pytorch/pytorch/pull/5617
-            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
-            if module.bias is not None:
-                module.bias.data.zero_()
-        elif isinstance(module, nn.Embedding):
-            module.weight.data.normal_(mean=0.0, std=self.config.initializer_range)
-            if module.padding_idx is not None:
-                module.weight.data[module.padding_idx].zero_()
-        elif isinstance(module, nn.LayerNorm):
-            module.bias.data.zero_()
-            module.weight.data.fill_(1.0)
+    def _set_gradient_checkpointing(self, module, value=False):
+        if isinstance(module, (ElectraEncoder, LSGElectraEncoder)):
+            module.gradient_checkpointing = value
 
 
-class LSGAlbertModel(LSGAlbertPreTrainedModel, AlbertModel):
+class LSGElectraModel(LSGElectraPreTrainedModel, ElectraModel):
+    """
+    This class overrides :class:`~transformers.ElectraModel`. Please check the superclass for the appropriate
+    documentation alongside usage examples.
+    """
 
-    config_class = LSGAlbertConfig
-    base_model_prefix = "albert"
+    config_class = LSGElectraConfig
 
-    def __init__(self, config, add_pooling_layer=True):
-        AlbertPreTrainedModel.__init__(self, config)
+    def __init__(self, config):
+        
+        LSGElectraPreTrainedModel.__init__(self, config)
 
+        self.embeddings = LSGElectraEmbeddings(config)
+
+        if config.embedding_size != config.hidden_size:
+            self.embeddings_project = nn.Linear(config.embedding_size, config.hidden_size)
+
+        self.encoder = LSGElectraEncoder(config)
+        self.config = config
+        
         assert hasattr(config, "num_global_tokens")
         self.num_global_tokens = config.num_global_tokens
         self.pad_idx = config.pad_token_id
@@ -815,31 +951,25 @@ class LSGAlbertModel(LSGAlbertPreTrainedModel, AlbertModel):
         self.adaptive = config.adaptive
         self.mask_first_token = config.mask_first_token
         self.pool_with_global = config.pool_with_global
-
-        self.config = config
-        self.embeddings = LSGAlbertEmbeddings(config)
-        self.encoder = LSGAlbertTransformer(config)
-        if add_pooling_layer:
-            self.pooler = nn.Linear(config.hidden_size, config.hidden_size)
-            self.pooler_activation = nn.Tanh()
-        else:
-            self.pooler = None
-            self.pooler_activation = None
-
+        
         # Initialize weights and apply final processing
         self.post_init()
 
     def forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        token_type_ids=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
+        self, 
+        input_ids=None, 
+        attention_mask=None, 
+        token_type_ids=None, 
+        position_ids=None, 
+        head_mask=None, 
+        inputs_embeds=None, 
+        encoder_hidden_states=None, 
+        encoder_attention_mask=None, 
+        past_key_values=None, 
+        use_cache=None, 
+        output_attentions=None, 
+        output_hidden_states=None, 
+        return_dict=None
         ):
 
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
@@ -847,7 +977,7 @@ class LSGAlbertModel(LSGAlbertPreTrainedModel, AlbertModel):
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        
+
         inputs_ = input_ids if input_ids is not None else inputs_embeds
         n, t = inputs_.size()[:2]
 
@@ -855,6 +985,8 @@ class LSGAlbertModel(LSGAlbertPreTrainedModel, AlbertModel):
             attention_mask = torch.ones(n, t, device=inputs_.device, dtype=inputs_.dtype)
         if self.mask_first_token:
             attention_mask[:,0] = 0
+        if token_type_ids is None:
+            token_type_ids = torch.zeros(n, t, device=inputs_.device).long()
             
         b = self.block_size * 2
         pad = t % self.block_size
@@ -868,9 +1000,8 @@ class LSGAlbertModel(LSGAlbertPreTrainedModel, AlbertModel):
                 inputs_embeds = torch.nn.functional.pad(inputs_embeds.transpose(-1, -2), (0, pad_length), value=0.).transpose(-1, -2)
 
             attention_mask = torch.nn.functional.pad(attention_mask, (0, pad_length), value=0)
+            token_type_ids = torch.nn.functional.pad(token_type_ids, (0, pad_length), value=0)
 
-            if token_type_ids is not None:
-                token_type_ids = torch.nn.functional.pad(token_type_ids, (0, pad_length), value=0)
             if position_ids is not None:
                 position_ids = torch.nn.functional.pad(position_ids, (0, pad_length), value=0)
         
@@ -883,6 +1014,10 @@ class LSGAlbertModel(LSGAlbertPreTrainedModel, AlbertModel):
             position_ids=position_ids, 
             head_mask=head_mask, 
             inputs_embeds=inputs_embeds, 
+            encoder_hidden_states=encoder_hidden_states, 
+            encoder_attention_mask=encoder_attention_mask, 
+            past_key_values=past_key_values, 
+            use_cache=use_cache, 
             output_attentions=output_attentions, 
             output_hidden_states=output_hidden_states, 
             return_dict=return_dict
@@ -899,108 +1034,165 @@ class LSGAlbertModel(LSGAlbertPreTrainedModel, AlbertModel):
         # Adapt sequence to initial shape
         if diff < 0:
             sequence_output = sequence_output[:, :t]
-        
-        pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
 
         if not return_dict:
-            return (sequence_output, pooled_output) + encoder_outputs[1:]
-        
+            return (sequence_output, ) + encoder_outputs[1:]
+
         encoder_outputs.last_hidden_state = sequence_output 
-        encoder_outputs.pooler_output = pooled_output
         return encoder_outputs
 
+    def get_extended_attention_mask(self, attention_mask, input_shape, device=None):
 
-class LSGAlbertForPreTraining(LSGAlbertPreTrainedModel, AlbertForPreTraining):
+        # Do not rely on original triangular mask from BERT/RoBERTa for causalLM
+        if attention_mask.dim() == 3:
+            extended_attention_mask = attention_mask[:, None, :, :]
+        elif attention_mask.dim() == 2:
+            extended_attention_mask = attention_mask[:, None, None, :]
+        else:
+            raise ValueError(
+                f"Wrong shape for input_ids (shape {input_shape}) or attention_mask (shape {attention_mask.shape})"
+            )
+
+        extended_attention_mask = extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
+        extended_attention_mask = (1.0 - extended_attention_mask) * torch.finfo(extended_attention_mask.dtype).min
+
+        return extended_attention_mask
+
+
+class LSGElectraForPreTraining(LSGElectraPreTrainedModel, ElectraForPreTraining):
+
+    config_class = LSGElectraConfig
 
     def __init__(self, config):
 
-        LSGAlbertPreTrainedModel.__init__(self, config)
+        LSGElectraPreTrainedModel.__init__(self, config)
 
-        self.albert = LSGAlbertModel(config)
-        self.predictions = AlbertMLMHead(config)
-        self.sop_classifier = AlbertSOPHead(config)
+        self.electra = LSGElectraModel(config)
+        self.discriminator_predictions = ElectraDiscriminatorPredictions(config)
 
         # Initialize weights and apply final processing
         self.post_init()
 
 
-class LSGAlbertForMaskedLM(LSGAlbertPreTrainedModel, AlbertForMaskedLM):
+class LSGElectraForMaskedLM(LSGElectraPreTrainedModel, ElectraForMaskedLM):
+    """
+    This class overrides :class:`~transformers.ElectraForMaskedLM`. Please check the superclass for the appropriate
+    documentation alongside usage examples.
+    """
 
-    _keys_to_ignore_on_load_unexpected = [r"pooler"]
+    config_class = LSGElectraConfig
 
     def __init__(self, config):
-        LSGAlbertPreTrainedModel.__init__(self, config)
 
-        self.albert = LSGAlbertModel(config, add_pooling_layer=False)
-        self.predictions = AlbertMLMHead(config)
+        LSGElectraPreTrainedModel.__init__(self, config)
 
+        self.electra = LSGElectraModel(config)
+        self.generator_predictions = ElectraGeneratorPredictions(config)
+
+        self.generator_lm_head = nn.Linear(config.embedding_size, config.vocab_size)
         # Initialize weights and apply final processing
         self.post_init()
 
 
-class LSGAlbertForSequenceClassification(LSGAlbertPreTrainedModel, AlbertForSequenceClassification):
+class LSGElectraForSequenceClassification(LSGElectraPreTrainedModel, ElectraForSequenceClassification):
+    """
+    This class overrides :class:`~transformers.ElectraForSequenceClassification`. Please check the superclass for the
+    appropriate documentation alongside usage examples.
+    """
+
+    config_class = LSGElectraConfig
 
     def __init__(self, config):
+        
+        LSGElectraPreTrainedModel.__init__(self, config)
 
-        LSGAlbertPreTrainedModel.__init__(self, config)
         self.num_labels = config.num_labels
         self.config = config
-
-        self.albert = LSGAlbertModel(config)
-        self.dropout = nn.Dropout(config.classifier_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size, self.config.num_labels)
+        self.electra = LSGElectraModel(config)
+        self.classifier = ElectraClassificationHead(config)
 
         # Initialize weights and apply final processing
         self.post_init()
 
+        
+class LSGElectraForMultipleChoice(LSGElectraPreTrainedModel, ElectraForMultipleChoice):
+    """
+    This class overrides :class:`~transformers.ElectraForMultipleChoice`. Please check the superclass for the
+    appropriate documentation alongside usage examples.
+    """
 
-class LSGAlbertForTokenClassification(LSGAlbertPreTrainedModel, AlbertForTokenClassification):
-
-    _keys_to_ignore_on_load_unexpected = [r"pooler"]
-
-    def __init__(self, config):
-
-        LSGAlbertPreTrainedModel.__init__(self, config)
-        self.num_labels = config.num_labels
-
-        self.albert = LSGAlbertModel(config, add_pooling_layer=False)
-        classifier_dropout_prob = (
-            config.classifier_dropout_prob
-            if config.classifier_dropout_prob is not None
-            else config.hidden_dropout_prob
-        )
-        self.dropout = nn.Dropout(classifier_dropout_prob)
-        self.classifier = nn.Linear(config.hidden_size, self.config.num_labels)
-
-        # Initialize weights and apply final processing
-        self.post_init()
-
-
-class LSGAlbertForQuestionAnswering(LSGAlbertPreTrainedModel, AlbertForQuestionAnswering):
-
-    _keys_to_ignore_on_load_unexpected = [r"pooler"]
+    config_class = LSGElectraConfig
 
     def __init__(self, config):
+        
+        LSGElectraPreTrainedModel.__init__(self, config)
 
-        LSGAlbertPreTrainedModel.__init__(self, config)
-        self.num_labels = config.num_labels
-
-        self.albert = LSGAlbertModel(config, add_pooling_layer=False)
-        self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
-
-        # Initialize weights and apply final processing
-        self.post_init()
-
-
-class LSGAlbertForMultipleChoice(LSGAlbertPreTrainedModel, AlbertForMultipleChoice):
-
-    def __init__(self, config):
-
-        LSGAlbertPreTrainedModel.__init__(self, config)
-
-        self.albert = LSGAlbertModel(config)
-        self.dropout = nn.Dropout(config.classifier_dropout_prob)
+        self.electra = LSGElectraModel(config)
+        self.sequence_summary = SequenceSummary(config)
         self.classifier = nn.Linear(config.hidden_size, 1)
+
+        # Initialize weights and apply final processing
+        self.post_init()
+
+
+class LSGElectraForCausalLM(LSGElectraPreTrainedModel, ElectraForCausalLM):
+
+    def __init__(self, config):
+
+        LSGElectraPreTrainedModel.__init__(self, config)
+
+        if not config.is_decoder:
+            logger.warning("If you want to use `ElectraForCausalLM` as a standalone, add `is_decoder=True.`")
+
+        self.electra = LSGElectraModel(config)
+        self.generator_predictions = ElectraGeneratorPredictions(config)
+        self.generator_lm_head = nn.Linear(config.embedding_size, config.vocab_size)
+
+        self.init_weights()
+
+
+class LSGElectraForTokenClassification(LSGElectraPreTrainedModel, ElectraForTokenClassification):
+    """
+    This class overrides :class:`~transformers.ElectraForTokenClassification`. Please check the superclass for the
+    appropriate documentation alongside usage examples.
+    """
+
+    config_class = LSGElectraConfig
+
+    def __init__(self, config):
+        
+        LSGElectraPreTrainedModel.__init__(self, config)
+
+        self.num_labels = config.num_labels
+
+        self.electra = LSGElectraModel(config)
+        classifier_dropout = (
+            config.classifier_dropout if config.classifier_dropout is not None else config.hidden_dropout_prob
+        )
+        self.dropout = nn.Dropout(classifier_dropout)
+        self.classifier = nn.Linear(config.hidden_size, config.num_labels)
+
+        # Initialize weights and apply final processing
+        self.post_init()
+
+
+class LSGElectraForQuestionAnswering(LSGElectraPreTrainedModel, ElectraForQuestionAnswering):
+    """
+    This class overrides :class:`~transformers.ElectraForQuestionAnswering`. Please check the superclass for the
+    appropriate documentation alongside usage examples.
+    """
+
+    config_class = LSGElectraConfig
+    base_model_prefix = "electra"
+
+    def __init__(self, config):
+        
+        LSGElectraPreTrainedModel.__init__(self, config)
+
+        self.num_labels = config.num_labels
+
+        self.electra = LSGElectraModel(config)
+        self.qa_outputs = nn.Linear(config.hidden_size, config.num_labels)
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1011,7 +1203,7 @@ def str_to_class(classname):
 
 # Register model in Auto API
 try:
-    LSGAlbertConfig.register_for_auto_class()
+    LSGElectraConfig.register_for_auto_class()
     for key, value in AUTO_MAP.items():
         str_to_class(value.split(".")[-1]).register_for_auto_class(key)
 except:
