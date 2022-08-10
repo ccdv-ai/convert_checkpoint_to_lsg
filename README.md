@@ -8,13 +8,13 @@ This script converts any AlBERT/BART/BERT/CamemBERT/DistilBert/Electra/Pegasus/R
 
 Memory and speed during training for a binary classification task with 4x4096 tokens (RTX 8000).
 
-| Models                          | Seconds per step | Memory w/ attn dropout) | Memory w/o attn dropout |
-|---------------------------------|------------------|-------------------------|-------------------------|
-| Longformer-base                 | 3.22 s/step      | 34.38 Gb                | 32.83 Gb                |
-| BigBird-RoBERTa-base            | 2.85 s/step      | 38.13 Gb                | 38.13 Gb (no effect)    |
-| LSG-RoBERTa-base 256/0          | 1.40 s/step      | 32.92 Gb                | 24.8 Gb                 |
-| LSG-RoBERTa-base 128/128 (norm) | 1.51 s/step      | 33.80 Gb                | 27.52 Gb                |
-| LSG-RoBERTa-base 32/32 (norm)   | 1.20 s/step      | 24.53 Gb                | 22.53 Gb                |
+| Models                     | Seconds per step | Memory w/ attn dropout) | Memory w/o attn dropout |
+|----------------------------|------------------|-------------------------|-------------------------|
+| Longformer-base            | 3.22 s/step      | 34.38 Gb                | 32.83 Gb                |
+| BigBird-RoBERTa-base       | 2.85 s/step      | 38.13 Gb                | 38.13 Gb (no effect)    |
+| LSG-RoBERTa 256/0          | 1.40 s/step      | 32.92 Gb                | 24.8 Gb                 |
+| LSG-RoBERTa 128/128 (norm) | 1.51 s/step      | 33.80 Gb                | 27.52 Gb                |
+| LSG-RoBERTa 32/32 (norm)   | 1.20 s/step      | 24.53 Gb                | 22.53 Gb                |
 
 ![attn](img/attn.png)
 
