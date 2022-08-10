@@ -122,23 +122,24 @@ You can change various parameters like :
 
 ## Sparse selection type
 There are 5 different sparse selection patterns. The best type is task dependent. \
+If `sparse_block_size=0` or `sparsity_type="none"`, only local attention is considered. \
 Note that for sequences with length < 2*block_size, the type has no effect.
-* sparsity_type="norm", select highest norm tokens
+* `sparsity_type="norm"`, select highest norm tokens
     * Works best for a small sparsity_factor (2 to 4)
     * Additional parameters:
         * None
-* sparsity_type="pooling", use average pooling to merge tokens
+* `sparsity_type="pooling"`, use average pooling to merge tokens
     * Works best for a small sparsity_factor (2 to 4)
     * Additional parameters:
         * None
-* sparsity_type="lsh", use the LSH algorithm to cluster similar tokens
+* `sparsity_type="lsh"`, use the LSH algorithm to cluster similar tokens
     * Works best for a large sparsity_factor (4+)
     * LSH relies on random projections, thus inference may differ slightly with different seeds
     * Additional parameters:
         * lsg_num_pre_rounds=1, pre merge tokens n times before computing centroids
-* sparsity_type="stride", use a striding mecanism per head
+* `sparsity_type="stride"`, use a striding mecanism per head
     * Each head will use different tokens strided by sparsify_factor
     * Not recommended if sparsify_factor > num_heads
-* sparsity_type="block_stride", use a striding mecanism per head
+* `sparsity_type="block_stride"`, use a striding mecanism per head
     * Each head will use block of tokens strided by sparsify_factor
     * Not recommended if sparsify_factor > num_heads
