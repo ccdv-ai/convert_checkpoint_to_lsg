@@ -11,7 +11,7 @@ This script converts any AlBERT/BART/BERT/CamemBERT/DistilBert/Electra/Pegasus/R
 * [LSG-Attention](#lsg-attention)
 
 # Efficiency
-Memory and speed during training for a binary classification task with 4x4096 tokens (RTX 8000).
+Memory and training speed for a binary classification task with 4x4096 tokens batches and Adam (RTX 8000).
 
 | Models                     | Seconds per step | Memory w/ attn dropout  | Memory w/o attn dropout |
 |----------------------------|------------------|-------------------------|-------------------------|
