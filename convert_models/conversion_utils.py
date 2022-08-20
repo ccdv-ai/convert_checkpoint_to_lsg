@@ -130,7 +130,7 @@ class ConversionScript():
 
         if is_lsg_architecture and not self.resize_lsg:
             warnings.warn("LSG architecture detected, to resize positional embedding only, add --resize_lsg (won't affect global embedding)")
-        if is_lsg_architecture and not self.keep_first_global_token:
+        if is_lsg_architecture and not self.keep_first_global_token and not self.resize_lsg:
             warnings.warn("LSG architecture detected, to keep the same first global token, add --keep_first_global_token")
 
         keep_first = False
