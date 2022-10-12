@@ -1,7 +1,7 @@
 
 Under review
 
-Requires `transformers >= 4.18.0`
+Requires `transformers >= 4.23.0`
 
 This script converts any AlBERT/BART/BERT/CamemBERT/DistilBert/Electra/Pegasus/RoBERTa/XLM-Roberta checkpoint (from HuggingFace hub, [see](https://huggingface.co/ccdv)) to its LSG variant to handle long sequences.
 

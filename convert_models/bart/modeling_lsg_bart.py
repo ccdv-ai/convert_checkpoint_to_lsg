@@ -804,7 +804,7 @@ class LSGBartEncoder(LSGBartPretrainedModel, BartEncoder):
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
 
-        embed_pos = self.embed_positions(input_shape)
+        embed_pos = self.embed_positions(inputs_embeds)
         hidden_states = inputs_embeds + embed_pos
 
         # Add global tokens
