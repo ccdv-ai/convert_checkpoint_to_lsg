@@ -100,7 +100,7 @@ class FileArguments:
             "help": "Add token_type_ids (0) to global embeddings if the model allows it"}
     )
 
-    do_test: bool = field(
+    run_test: bool = field(
         default=False,
         metadata={
             "help": "Test the architecture of the new model"}
@@ -149,7 +149,7 @@ def main():
             )
         converter.process()
 
-        if args.do_test:
+        if args.run_test:
             converter.run_test()
         
     else:
