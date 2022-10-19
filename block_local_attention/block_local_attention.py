@@ -172,7 +172,7 @@ class BlockLocalSelfAttention(nn.Module):
 
     def build_lsg_inputs(self, hidden_states, global_hidden_states, is_attn_mask=False):
         
-        return self.cat_global_sparse_local_tokens(
+        return self.cat_tokens(
             global_hidden_states, 
             self.reshape_to_local_block(hidden_states, is_attn_mask)
             )
@@ -207,7 +207,7 @@ class BlockLocalSelfAttention(nn.Module):
 
         return hidden_states
 
-    def cat_global_sparse_local_tokens(self, x_global, x_local=None, dim=-2):
+    def cat_tokens(self, x_global, x_local, dim=-2):
 
         n, h, b, t, d = x_local.size()
         x_global = x_global.unsqueeze(-3).expand(-1, -1, b, -1, -1)
