@@ -8,6 +8,7 @@ Requires `transformers >= 4.22.0`
 * [Efficiency](#efficiency)
 * [Conversion](#convert-checkpoint-to-lsg)
 * [Usage](#model-usage)
+* [Block-Local-Attention](#block-local-attention)
 * [LSG-Attention](#lsg-attention)
 * [Experiments](#experiments)
 
@@ -17,7 +18,7 @@ This script converts HuggingFace checkpoints to its LSG (Local-Sparse-Global) va
 
 * ALBERT [`"albert"`]
 * BART [`"bart"`] (encoder attention modified only)
-* BARTHEZ [`"barthez"`] (encoder attention modified only)
+* BARThez [`"barthez"`] (encoder attention modified only)
 * BERT [`"bert"`]
 * CamemBERT [`"camembert"`]
 * DistilBERT [`"distilbert"`]
@@ -114,6 +115,30 @@ tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 inputs = tokenizer(SENTENCE, return_tensors="pt")
 model(**inputs)
+```
+
+# Block-Local-Attention
+
+For those who only want a vanilla Block-Local-Attention module, see `/block_local_attention`:
+
+```python
+from block_local_attention import *
+
+# batch, num_heads, sequence length, hidden_size
+n, h, t, d = 2, 4, 58, 32  
+
+Q, K, V = torch.randn(n, h, t, d), torch.randn(n, h, t, d), torch.randn(n, h, t, d)
+attention_mask = torch.zeros(n, 1, 1, t).float()
+
+attn = BlockLocalSelfAttention(block_size=16, compute_global_attention=True, is_causal=False, attention_dropout_prob=0.1)
+
+# expect (n, h, t, d) inputs,
+# attention_mask is (n, 1, 1, t) or (n, 1, t, t) for causal
+# attention_mask is 0 for no mask, -inf for mask (similar to most HuggingFace models)
+outputs = attn(Q, K, V, attention_mask)
+
+print(outputs.shape)
+> torch.Size([2, 4, 58, 32])
 ```
 
 # LSG Attention
