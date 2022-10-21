@@ -243,7 +243,7 @@ class CausalAttentionProduct(nn.Module):
                 diagonal=-1
                 ) 
             causal_mask = causal_mask.T * torch.finfo(attention_scores.dtype).min
-            attention_scores[..., -causal_shape[0]:, -causal_shape[1]:] = causal_mask
+            attention_scores[..., -causal_shape[0]:, -causal_shape[1] + 1:] = causal_mask[:, 1:]
 
             del attention_mask
 
