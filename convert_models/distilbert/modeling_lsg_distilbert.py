@@ -618,148 +618,27 @@ class LSGSelfAttention(BaseSelfAttention):
 
     def forward(
         self,
-        hidden_states,
-        attention_mask=None,
+        query,
+        key,
+        value,
+        mask=None,
         head_mask=None,
-        encoder_hidden_states=None,
-        encoder_attention_mask=None,
-        past_key_value=None,
-        output_attentions=False,
-        ):
-        
-        query_layer = self.q_lin(hidden_states)
-
-        # If this is instantiated as a cross-attention module, the keys
-        # and values come from an encoder; the attention mask needs to be
-        # such that the encoder's padding tokens are not attended to.
-        is_cross_attention = encoder_hidden_states is not None
-
-        if is_cross_attention and past_key_value is not None:
-            # reuse k,v, cross_attentions
-            key_layer = past_key_value[0]
-            value_layer = past_key_value[1]
-            attention_mask = encoder_attention_mask
-        elif is_cross_attention:
-            key_layer = self.transpose_for_scores(self.k_lin(encoder_hidden_states))
-            value_layer = self.transpose_for_scores(self.v_lin(encoder_hidden_states))
-            attention_mask = encoder_attention_mask
-        elif past_key_value is not None:
-            key_layer = self.transpose_for_scores(self.k_lin(hidden_states))
-            value_layer = self.transpose_for_scores(self.v_lin(hidden_states))
-            key_layer = torch.cat([past_key_value[0], key_layer], dim=2)
-            value_layer = torch.cat([past_key_value[1], value_layer], dim=2)
-        else:
-            key_layer = self.transpose_for_scores(self.k_lin(hidden_states))
-            value_layer = self.transpose_for_scores(self.v_lin(hidden_states))
-
-        query_layer = self.transpose_for_scores(query_layer)
-
-        if self.is_decoder:
-            # if cross_attention save Tuple(torch.Tensor, torch.Tensor) of all cross attention key/value_states.
-            # Further calls to cross_attention layer can then reuse all cross-attention
-            # key/value_states (first "if" case)
-            # if uni-directional self-attention (decoder) save Tuple(torch.Tensor, torch.Tensor) of
-            # all previous decoder key/value_states. Further calls to uni-directional self-attention
-            # can concat previous decoder key/value_states to current projected key/value_states (third "elif" case)
-            # if encoder bi-directional self-attention `past_key_value` is always `None`
-            past_key_value = (key_layer, value_layer)
-
-            if is_cross_attention:
-                outputs = self.cross_attention_forward(
-                    query_layer=query_layer, 
-                    key_layer=key_layer, 
-                    value_layer=value_layer, 
-                    attention_mask=attention_mask,
-                    output_attentions=output_attentions
-                    )
-            else:
-                outputs = self.causal_forward(
-                    query_layer,
-                    key_layer,
-                    value_layer,
-                    attention_mask=attention_mask,
-                    output_attentions=output_attentions,
-                )
-
-            outputs = outputs + ((key_layer, value_layer),)
-            
-        else:
-            outputs = self.not_causal_forward(
-                query_layer,
-                key_layer,
-                value_layer, 
-                attention_mask=attention_mask, 
-                output_attentions=output_attentions
-                )
-
-        return (self.out_lin(outputs[0]),) + outputs[1:]
-
-    def causal_forward(
-        self,
-        query_layer,
-        key_layer,
-        value_layer,
-        attention_mask=None,
-        output_attentions=False,
+        output_attentions=None,
         ):
 
-        n, h, t, d = key_layer.size()
+        key_layer = self.transpose_for_scores(self.k_lin(key))
+        value_layer = self.transpose_for_scores(self.v_lin(value))
+        query_layer = self.transpose_for_scores(self.q_lin(query))
 
-        # Cat global mask
-        attention_mask = torch.nn.functional.pad(attention_mask, (self.num_global_tokens, 0), value=0)
-
-        # Split input into global tokens and other tokens
-        split = (self.num_global_tokens, t - self.num_global_tokens)
-        global_query, query_layer = query_layer.split(split, dim=-2)
-
-        # Use normal causal attention if local attention covers every tokens
-        if t <= 2 * self.block_size + self.num_global_tokens:
-            context_layer = self.causal_attention(
-                query_layer=query_layer, 
-                key_layer=key_layer, 
-                value_layer=value_layer, 
-                attention_mask=attention_mask,
-                causal_shape=(t - self.num_global_tokens, t - self.num_global_tokens)
-                )
-            
-            context_layer = torch.cat([global_query, context_layer], dim=-2)
-            return (self.reshape_output(context_layer), )
-        
-        # Split K Q M on global and non global
-        global_key, key_layer = key_layer.split(split, dim=-2)
-        global_value, value_layer = value_layer.split(split, dim=-2)
-        global_mask, attention_mask = attention_mask.split(split, dim=-1)
-        
-        n, h, t, d = key_layer.size()
-
-        # Get sparse idx
-        sparse_key, sparse_value, sparse_mask = (None, None, None)
-        if self.sparse_block_size and self.sparsity_factor > 0:
-            sparse_key, sparse_value, sparse_mask = self.get_sparse_elements(key_layer, value_layer, attention_mask)
-        
-        # Expand masks on heads
-        attention_mask = attention_mask.expand(-1, h, -1, -1)
-        global_mask = global_mask.expand(-1, h, -1, -1)
-
-        # Compute dot product attention
-        context_layer = self.attention(
-            query_layer, 
-            key_layer, 
+        outputs = self.not_causal_forward(
+            query_layer,
+            key_layer,
             value_layer, 
-            attention_mask,
-            sparse_key=sparse_key,
-            sparse_value=sparse_value,
-            sparse_mask=sparse_mask,
-            global_key=global_key,
-            global_value=global_value,
-            global_mask=global_mask
+            attention_mask=mask, 
+            output_attentions=output_attentions
             )
 
-        # Merge pseudo global (causal) and local-sparse tokens
-        context_layer = torch.cat([global_query, context_layer], dim=-2)
-        context_layer = self.reshape_output(context_layer)
-
-        return (context_layer,)
+        return (self.out_lin(outputs[0]),) + outputs[1:]
 
     def not_causal_forward(
         self,
@@ -834,23 +713,6 @@ class LSGSelfAttention(BaseSelfAttention):
         
         return (context_layer,)
 
-    def cross_attention_forward(
-        self,
-        query_layer,
-        key_layer,
-        value_layer,
-        attention_mask=None,
-        output_attentions=False,
-        ):
-
-        context_layer = self.full_attention(
-            query_layer=query_layer, 
-            key_layer=key_layer, 
-            value_layer=value_layer, 
-            attention_mask=attention_mask
-        )
-        return (self.reshape_output(context_layer), )
-
     def chunk(self, x, chunk_size):
 
         n, h, t, d = x.size()
@@ -867,39 +729,6 @@ class LSGTransformerBlock(TransformerBlock):
 
         self.attention = LSGSelfAttention(config)
 
-    def forward(self, x, attn_mask=None, head_mask=None, output_attentions=False):
-        """
-        Parameters:
-            x: torch.tensor(bs, seq_length, dim)
-            attn_mask: torch.tensor(bs, seq_length)
-
-        Returns:
-            sa_weights: torch.tensor(bs, n_heads, seq_length, seq_length) The attention weights ffn_output:
-            torch.tensor(bs, seq_length, dim) The output of the transformer block contextualization.
-        """
-        # Self-Attention
-        sa_output = self.attention(
-            hidden_states=x,
-            attention_mask=torch.finfo(x.dtype).min*(1 - attn_mask).unsqueeze(1).unsqueeze(1),
-            head_mask=head_mask,
-            output_attentions=output_attentions,
-        )
-        if output_attentions:
-            sa_output, sa_weights = sa_output  # (bs, seq_length, dim), (bs, n_heads, seq_length, seq_length)
-        else:  # To handle these `output_attentions` or `output_hidden_states` cases returning tuples
-            assert type(sa_output) == tuple
-            sa_output = sa_output[0]
-        sa_output = self.sa_layer_norm(sa_output + x)  # (bs, seq_length, dim)
-
-        # Feed Forward Network
-        ffn_output = self.ffn(sa_output)  # (bs, seq_length, dim)
-        ffn_output = self.output_layer_norm(ffn_output + sa_output)  # (bs, seq_length, dim)
-
-        output = (ffn_output,)
-        if output_attentions:
-            output = (sa_weights,) + output
-        return output
-
 
 class LSGTransformer(Transformer):
 
@@ -908,6 +737,66 @@ class LSGTransformer(Transformer):
         super().__init__(config)
 
         self.layer = nn.ModuleList([LSGTransformerBlock(config) for _ in range(config.n_layers)])
+
+        assert hasattr(config, "num_global_tokens")
+        self.num_global_tokens = config.num_global_tokens
+        self.pad_idx = config.pad_token_id
+
+        assert hasattr(config, "block_size") and hasattr(config, "adaptive")
+        self.block_size = config.block_size
+        self.adaptive = config.adaptive
+        self.mask_first_token = config.mask_first_token
+        self.pool_with_global = config.pool_with_global
+
+    def forward(
+        self,
+        x: torch.Tensor,
+        attn_mask: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        output_attentions: bool = False,
+        output_hidden_states: bool = False,
+        return_dict: Optional[bool] = None,
+    ) -> Union[BaseModelOutput, Tuple[torch.Tensor, ...]]:  # docstyle-ignore
+
+        attn_mask = attn_mask.float()
+        mask_value = 0
+        n, t = attn_mask.size()
+
+        b = self.block_size * 2
+        pad = t % self.block_size
+        
+        # Check if t is multiple of block_size and pad
+        if self.adaptive and t > b and pad > 0:
+            pad_length = self.block_size - pad
+            x = torch.nn.functional.pad(x.transpose(-1, -2), (0, pad_length), value=0.).transpose(-1, -2)
+            attn_mask = torch.nn.functional.pad(attn_mask, (0, pad_length), value=mask_value)
+
+        if self.mask_first_token:
+            attn_mask[..., 0] = mask_value
+
+        attn_mask = torch.finfo(x.dtype).min*(1 - attn_mask).unsqueeze(1).unsqueeze(1)
+
+        encoder_outputs = super().forward(
+            x=x,
+            attn_mask=attn_mask,
+            head_mask=head_mask,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict
+        )
+
+        sequence_output = encoder_outputs[0]
+        if self.pool_with_global:
+            sequence_output[:, self.num_global_tokens] = sequence_output[:, 0]
+
+        # Adapt sequence to initial shape
+        sequence_output = sequence_output[..., self.num_global_tokens: t + self.num_global_tokens, :]
+
+        if not return_dict:
+            return (sequence_output, ) + encoder_outputs[1:]
+        
+        encoder_outputs.last_hidden_state = sequence_output 
+        return encoder_outputs
 
 
 class LSGDistilBertPreTrainedModel(DistilBertPreTrainedModel):
@@ -927,112 +816,37 @@ class LSGDistilBertModel(LSGDistilBertPreTrainedModel, DistilBertModel):
 
         self.embeddings = LSGEmbeddings(config)  # Embeddings
         self.transformer = LSGTransformer(config)  # Encoder
-
-        assert hasattr(config, "num_global_tokens")
         self.num_global_tokens = config.num_global_tokens
-        self.pad_idx = config.pad_token_id
-
-        assert hasattr(config, "block_size") and hasattr(config, "adaptive")
-        self.block_size = config.block_size
-        self.adaptive = config.adaptive
-        self.mask_first_token = config.mask_first_token
-        self.pool_with_global = config.pool_with_global
-
         # Initialize weights and apply final processing
         self.post_init()
 
     def forward(
         self,
-        input_ids=None,
-        attention_mask=None,
-        head_mask=None,
-        inputs_embeds=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-        ):
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[BaseModelOutput, Tuple[torch.Tensor, ...]]:
 
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        inputs_ = input_ids if input_ids is not None else inputs_embeds
-        n, t = inputs_.size()[:2]
-
-        if attention_mask is None:
-            attention_mask = torch.ones(n, t, device=inputs_.device, dtype=inputs_.dtype)
-        if self.mask_first_token:
-            attention_mask[:,0] = 0
-            
-        b = self.block_size * 2
-        pad = t % self.block_size
         
-        # Check if t is multiple of block_size and pad
-        if self.adaptive and t > b and pad > 0:
-            pad_length = self.block_size - pad
-            if input_ids is not None:
-                input_ids = torch.nn.functional.pad(input_ids, (0, pad_length), value=self.pad_idx)
-            else:
-                inputs_embeds = torch.nn.functional.pad(inputs_embeds.transpose(-1, -2), (0, pad_length), value=0.).transpose(-1, -2)
-            
-            attention_mask = torch.nn.functional.pad(attention_mask, (0, pad_length), value=0)
-        
-        n, t_ = attention_mask.size()
+        if input_ids is None and inputs_embeds is not None:
+            inputs_embeds = self.embeddings(None, inputs_embeds)
+            if attention_mask is None:
+                n, t, d = inputs_embeds.size()
+                attention_mask = torch.ones(n, t - self.num_global_tokens, device=inputs_embeds.device)
 
-        encoder_outputs = self._forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            head_mask=head_mask,
-            inputs_embeds=inputs_embeds,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
+        return super().forward(
+            input_ids=input_ids, 
+            attention_mask=attention_mask, 
+            head_mask=head_mask, 
+            inputs_embeds=inputs_embeds, 
+            output_attentions=output_attentions, 
+            output_hidden_states=output_hidden_states, 
+            return_dict=return_dict
             )
-
-        sequence_output = encoder_outputs[0]
-        if self.pool_with_global:
-            sequence_output[:, self.num_global_tokens] = sequence_output[:, 0]
-        
-        diff = t - t_
-        n, _, d = sequence_output.size()
-        sequence_output = sequence_output[..., self.num_global_tokens:, :]
-
-        # Adapt sequence to initial shape
-        if diff < 0:
-            sequence_output = sequence_output[:, :t]
-
-        if not return_dict:
-            return (sequence_output, ) + encoder_outputs[1:]
-
-        encoder_outputs.last_hidden_state = sequence_output 
-        return encoder_outputs
-        
-
-    def _forward(
-        self,
-        input_ids=None,
-        attention_mask=None,
-        head_mask=None,
-        inputs_embeds=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-    ):
-        
-        # Prepare head mask if needed
-        head_mask = self.get_head_mask(head_mask, self.config.num_hidden_layers)
-        inputs_embeds = self.embeddings(input_ids, inputs_embeds)  # (bs, seq_length, dim)
-        return self.transformer(
-            x=inputs_embeds,
-            attn_mask=attention_mask,
-            head_mask=head_mask,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-        )
-
 
 class LSGDistilBertForMaskedLM(LSGDistilBertPreTrainedModel, DistilBertForMaskedLM):
 

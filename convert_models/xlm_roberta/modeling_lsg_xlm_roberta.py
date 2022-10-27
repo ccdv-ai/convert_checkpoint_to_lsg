@@ -896,6 +896,71 @@ class LSGRobertaEncoder(RobertaEncoder):
         super().__init__(config)
         self.layer = nn.ModuleList([LSGRobertaLayer(config) for _ in range(config.num_hidden_layers)])
 
+        assert hasattr(config, "num_global_tokens")
+        self.num_global_tokens = config.num_global_tokens
+        self.pad_idx = config.pad_token_id
+
+        assert hasattr(config, "block_size") and hasattr(config, "adaptive")
+        self.block_size = config.block_size
+        self.adaptive = config.adaptive
+        self.mask_first_token = config.mask_first_token
+        self.pool_with_global = config.pool_with_global
+
+    def forward(
+        self,
+        hidden_states: torch.Tensor,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.FloatTensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = False,
+        output_hidden_states: Optional[bool] = False,
+        return_dict: Optional[bool] = True,
+    ) -> Union[Tuple[torch.Tensor], BaseModelOutputWithPastAndCrossAttentions]:
+
+        mask_value = torch.finfo(attention_mask.dtype).min
+        n, _, __, t = attention_mask.size()
+        
+        if not (self.config.is_decoder and encoder_hidden_states is not None):
+            b = self.block_size * 2
+            pad = t % self.block_size
+            
+            # Check if t is multiple of block_size and pad
+            if self.adaptive and t > b and pad > 0:
+                pad_length = self.block_size - pad
+                hidden_states = torch.nn.functional.pad(hidden_states.transpose(-1, -2), (0, pad_length), value=0.).transpose(-1, -2)
+                attention_mask = torch.nn.functional.pad(attention_mask, (0, pad_length), value=mask_value)
+
+            if self.mask_first_token:
+                attention_mask[..., 0] = mask_value
+
+        encoder_outputs = super().forward(
+            hidden_states=hidden_states, 
+            attention_mask=attention_mask, 
+            head_mask=head_mask,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict
+            )
+
+        sequence_output = encoder_outputs[0]
+        if self.pool_with_global:
+            sequence_output[:, self.num_global_tokens] = sequence_output[:, 0]
+
+        # Adapt sequence to initial shape
+        sequence_output = sequence_output[..., self.num_global_tokens: t + self.num_global_tokens, :]
+
+        if not return_dict:
+            return (sequence_output, ) + encoder_outputs[1:]
+        
+        encoder_outputs.last_hidden_state = sequence_output 
+        return encoder_outputs
 
 class LSGRobertaPreTrainedModel(RobertaPreTrainedModel):
     """
@@ -923,16 +988,6 @@ class LSGXLMRobertaModel(LSGRobertaPreTrainedModel, RobertaModel):
         
         LSGRobertaPreTrainedModel.__init__(self, config)
 
-        assert hasattr(config, "num_global_tokens")
-        self.num_global_tokens = config.num_global_tokens
-        self.pad_idx = config.pad_token_id
-
-        assert hasattr(config, "block_size") and hasattr(config, "adaptive")
-        self.block_size = config.block_size
-        self.adaptive = config.adaptive
-        self.mask_first_token = config.mask_first_token
-        self.pool_with_global = config.pool_with_global
-
         self.embeddings = LSGRobertaEmbeddings(config)
         self.encoder = LSGRobertaEncoder(config)
         self.pooler = RobertaPooler(config) if add_pooling_layer else None
@@ -945,94 +1000,6 @@ class LSGXLMRobertaModel(LSGRobertaPreTrainedModel, RobertaModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-    def forward(
-        self, 
-        input_ids=None, 
-        attention_mask=None, 
-        token_type_ids=None, 
-        position_ids=None, 
-        head_mask=None, 
-        inputs_embeds=None, 
-        encoder_hidden_states=None, 
-        encoder_attention_mask=None, 
-        past_key_values=None, 
-        use_cache=None, 
-        output_attentions=None, 
-        output_hidden_states=None, 
-        return_dict=None
-        ):
-
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        inputs_ = input_ids if input_ids is not None else inputs_embeds
-        n, t = inputs_.size()[:2]
-
-        if attention_mask is None:
-            attention_mask = torch.ones(n, t, device=inputs_.device, dtype=inputs_.dtype)
-        if self.mask_first_token:
-            attention_mask[:,0] = 0
-            
-        b = self.block_size * 2
-        pad = t % self.block_size
-        
-        # Check if t is multiple of block_size and pad
-        if self.adaptive and t > b and pad > 0:
-            pad_length = self.block_size - pad
-            if input_ids is not None:
-                input_ids = torch.nn.functional.pad(input_ids, (0, pad_length), value=self.pad_idx)
-            else:
-                inputs_embeds = torch.nn.functional.pad(inputs_embeds.transpose(-1, -2), (0, pad_length), value=0.).transpose(-1, -2)
-
-            attention_mask = torch.nn.functional.pad(attention_mask, (0, pad_length), value=0)
-
-            if token_type_ids is not None:
-                token_type_ids = torch.nn.functional.pad(token_type_ids, (0, pad_length), value=0)
-            if position_ids is not None:
-                position_ids = torch.nn.functional.pad(position_ids, (0, pad_length), value=0)
-        
-        n, t_ = attention_mask.size()
-
-        encoder_outputs = super().forward(
-            input_ids=input_ids, 
-            attention_mask=attention_mask, 
-            token_type_ids=token_type_ids, 
-            position_ids=position_ids, 
-            head_mask=head_mask, 
-            inputs_embeds=inputs_embeds, 
-            encoder_hidden_states=encoder_hidden_states, 
-            encoder_attention_mask=encoder_attention_mask, 
-            past_key_values=past_key_values, 
-            use_cache=use_cache, 
-            output_attentions=output_attentions, 
-            output_hidden_states=output_hidden_states, 
-            return_dict=return_dict
-            )
-
-        sequence_output = encoder_outputs[0]
-        if self.pool_with_global:
-            sequence_output[:, self.num_global_tokens] = sequence_output[:, 0]
-        
-        diff = t - t_
-        n, _, d = sequence_output.size()
-        sequence_output = sequence_output[..., self.num_global_tokens:, :]
-
-        # Adapt sequence to initial shape
-        if diff < 0:
-            sequence_output = sequence_output[:, :t]
-        
-        pooled_output = self.pooler(sequence_output) if self.pooler is not None else None
-
-        if not return_dict:
-            return (sequence_output, pooled_output) + encoder_outputs[1:]
-        
-        encoder_outputs.last_hidden_state = sequence_output 
-        encoder_outputs.pooler_output = pooled_output
-        return encoder_outputs
-    
     def get_extended_attention_mask(self, attention_mask, input_shape, device=None):
 
         # Do not rely on original triangular mask from BERT/RoBERTa for causalLM

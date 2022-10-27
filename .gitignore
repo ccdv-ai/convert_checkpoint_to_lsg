@@ -7,3 +7,10 @@ convert2.sh
 convert3.sh
 convert_models/*/__pycache__
 block_local_attention/test_block_local.py
+convert_models/albert/modeling_lsg_albert_old.py
+convert_models/bert/modeling_lsg_bert_old.py
+convert_models/camembert/modeling_lsg_camembert_old.py
+convert_models/distilbert/modeling_lsg_distilbert_old.py
+convert_models/electra/modeling_lsg_electra_old.py
+convert_models/roberta/modeling_lsg_roberta_old.py
+convert_models/xlm_roberta/modeling_lsg_xlm_roberta_old.py
