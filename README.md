@@ -52,10 +52,9 @@ Memory and training speed for a binary classification task with 4x4096 tokens ba
 
 # Convert checkpoint to LSG 
 
-Use `convert_checkpoint.py` to convert a model (check model_type from config.json). \
-The architecture of the model is inferred from the config file, but you can specify a different one if the config is incorrect (which can happen for BART models), see  `python convert_checkpoint.py --help`. \
-To test the converted model, add `--run_test` (experimental).
+Models can be converted with or without the `lsg-converter` package.
 
+## With package
 
 BERT example with the `lsg-converter` package:
 
@@ -74,6 +73,12 @@ model, tokenizer = converter.convert_from_pretrained("bert-base-uncased", archit
 print(type(model))
 # <class 'lsg_converter.bert.modeling_lsg_bert.LSGBertForSequenceClassification'>
 ```
+
+## Without package
+
+Use `convert_checkpoint.py` to convert a model (check model_type from config.json). \
+The architecture of the model is inferred from the config file, but you can specify a different one if the config is incorrect (which can happen for BART models), see  `python convert_checkpoint.py --help`. \
+To test the converted model, add `--run_test` (experimental).
 
 RoBERTa example (from `RobertaForMaskedLM` to `RobertaForSequenceClassification`) without package:
 ```bash
