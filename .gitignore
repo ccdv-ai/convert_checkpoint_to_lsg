@@ -7,10 +7,6 @@ convert2.sh
 convert3.sh
 lsg_converter/*/__pycache__
 block_local_attention/test_block_local.py
-lsg_converter/albert/modeling_lsg_albert_old.py
-lsg_converter/bert/modeling_lsg_bert_old.py
-lsg_converter/camembert/modeling_lsg_camembert_old.py
-lsg_converter/distilbert/modeling_lsg_distilbert_old.py
-lsg_converter/electra/modeling_lsg_electra_old.py
-lsg_converter/roberta/modeling_lsg_roberta_old.py
-lsg_converter/xlm_roberta/modeling_lsg_xlm_roberta_old.py
+lsg_converter.egg-info/*
+dist
+update_package.sh
