@@ -4,6 +4,8 @@ Under review
 
 Requires `transformers >= 4.22.0`
 
+`pip install lsg-converter`
+
 * [Compatible models](#compatible-models)
 * [Efficiency](#efficiency)
 * [Conversion](#convert-checkpoint-to-lsg)
@@ -52,23 +54,25 @@ The architecture of the model is inferred from the config file, but you can spec
 To test the converted model, add `--run_test` (experimental).
 
 
-BERT example (`BertForPretraining`):
+BERT example (`BertForPretraining`) with package:
 
-```bash
-git clone https://github.com/ccdv-ai/convert_checkpoint_to_lsg.git
-cd convert_checkpoint_to_lsg
+```python
+from lsg_converter import LSGConverter
 
-export MODEL_TO_CONVERT=bert-base-uncased
-export MODEL_NAME=lsg-bert-base-uncased
-export MAX_LENGTH=4096
+converter = LSGConverter(max_sequence_length=4096)
 
-python convert_checkpoint.py \
-    --initial_model $MODEL_TO_CONVERT \
-    --model_name $MODEL_NAME \
-    --max_sequence_length $MAX_LENGTH
+# Example 1
+model, tokenizer = converter.convert_from_pretrained("bert-base-uncased", num_global_tokens=7)
+print(type(model))
+> <class 'lsg_converter.bert.modeling_lsg_bert.LSGBertForMaskedLM'>
+
+# Example 2
+model, tokenizer = converter.convert_from_pretrained("bert-base-uncased", architecture="BertForSequenceClassification", use_auth_token=True)
+print(type(model))
+> <class 'lsg_converter.bert.modeling_lsg_bert.LSGBertForSequenceClassification'>
 ```
 
-RoBERTa example (from `RobertaForMaskedLM` to `RobertaForSequenceClassification`):
+RoBERTa example (from `RobertaForMaskedLM` to `RobertaForSequenceClassification`) without package:
 ```bash
 git clone https://github.com/ccdv-ai/convert_checkpoint_to_lsg.git
 cd convert_checkpoint_to_lsg

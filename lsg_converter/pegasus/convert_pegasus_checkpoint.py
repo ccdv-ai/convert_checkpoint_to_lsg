@@ -1,23 +1,24 @@
-from .modeling_lsg_barthez import *
-from ..conversion_utils import ConversionScript
+from .modeling_lsg_pegasus import *
+try:
+    from ..conversion_utils import ConversionScript
+except:
+    from conversion_utils import ConversionScript
 
-class BarthezConversionScript(ConversionScript):
+class PegasusConversionScript(ConversionScript):
 
     _ARCHITECTURE_TYPE_DICT = {
-        "MBartModel": ("LSGMBartModel", LSGMBartModel),
-        "MBartForConditionalGeneration": ("LSGMBartForConditionalGeneration", LSGMBartForConditionalGeneration),
-        "MBartForCausalLM": ("LSGMBartForCausalLM", LSGMBartForCausalLM),
-        "MBartForQuestionAnswering": ("LSGMBartForQuestionAnswering", LSGMBartForQuestionAnswering),
-        "MBartForSequenceClassification": ("LSGMBartForSequenceClassification", LSGMBartForSequenceClassification),
+        "PegasusModel": ("LSGPegasusModel", LSGPegasusModel),
+        "PegasusForCausalLM": ("LSGPegasusForCausalLM", LSGPegasusForCausalLM),
+        "PegasusForConditionalGeneration": ("LSGPegasusForConditionalGeneration", LSGPegasusForConditionalGeneration),
     }
     _ARCHITECTURE_TYPE_DICT = {**{"LSG" + k: v for k, v in _ARCHITECTURE_TYPE_DICT.items()}, **_ARCHITECTURE_TYPE_DICT}
 
-    _BASE_ARCHITECTURE_TYPE = "MBartModel"
-    _DEFAULT_ARCHITECTURE_TYPE = "MBartForConditionalGeneration"
-    _CONFIG_MODULE = LSGMBartConfig
+    _BASE_ARCHITECTURE_TYPE = "PegasusModel"
+    _DEFAULT_ARCHITECTURE_TYPE = "PegasusForConditionalGeneration"
+    _CONFIG_MODULE = LSGPegasusConfig
 
     _DEFAULT_CONFIG_POSITIONAL_OFFSET = 0
-    _DEFAULT_POSITIONAL_OFFSET = 2
+    _DEFAULT_POSITIONAL_OFFSET = 0
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -36,11 +37,11 @@ class BarthezConversionScript(ConversionScript):
         cov = torch.cov(u.T)
         m = MultivariateNormal(u.mean(dim=0), cov)
         w = m.sample((512,))
-        w[0] = u[bos_id]
-
-        positions = module_prefix.encoder.embed_positions.weight.clone()[self._DEFAULT_POSITIONAL_OFFSET:] 
-        positions = self.order_positions(positions, stride)
         
+        w[0] = u[bos_id]
+        positions = module_prefix.encoder.embed_positions.weight.clone()
+        positions = self.order_positions(positions, stride)
+
         if keep_first_global:
             module_prefix.encoder.global_embeddings.weight.data[1:] = (w + positions)[1:]
         else:
@@ -49,9 +50,9 @@ class BarthezConversionScript(ConversionScript):
     def update_global(self, module_prefix, bos_id, mask_id, stride, keep_first_global):
 
         u = module_prefix.shared.weight.clone()
-        positions = module_prefix.encoder.embed_positions.weight.clone()[2:]
+        positions = module_prefix.encoder.embed_positions.weight.clone()
         positions = self.order_positions(positions, stride)
-
+        
         positions[0] += u[bos_id]
         positions[1:] += u[mask_id].unsqueeze(0)
 
@@ -60,30 +61,8 @@ class BarthezConversionScript(ConversionScript):
         else:
             module_prefix.encoder.global_embeddings.weight.data = positions
 
-    def update_positions(self, module_prefix, max_pos):
-
-        # Encoder
-        position_embeddings_weights = module_prefix.encoder.embed_positions.weight.clone()
-        current_max_position = position_embeddings_weights.size()[0]
-
-        new_position_embeddings_weights = torch.cat([
-            position_embeddings_weights[:self._DEFAULT_POSITIONAL_OFFSET]] + 
-            [position_embeddings_weights[self._DEFAULT_POSITIONAL_OFFSET:] for _ in range(max_pos//current_max_position + 1)], 
-            dim=0)[:max_pos + self._DEFAULT_POSITIONAL_OFFSET]
-
-        #processed_module.encoder.embed_positions.position_ids = torch.arange(max_pos + 2, device=processed_module.encoder.embed_positions.position_ids.device).unsqueeze(0)
-        module_prefix.encoder.embed_positions.weight.data = new_position_embeddings_weights
-
-        # Decoder
-        position_embeddings_weights = module_prefix.decoder.embed_positions.weight.clone()
-        current_max_position = position_embeddings_weights.size()[0]
-
-        new_position_embeddings_weights = torch.cat([
-            position_embeddings_weights[:self._DEFAULT_POSITIONAL_OFFSET]] + 
-            [position_embeddings_weights[self._DEFAULT_POSITIONAL_OFFSET:] for _ in range(max_pos//current_max_position + 1)], 
-            dim=0)[:max_pos + self._DEFAULT_POSITIONAL_OFFSET]
-
-        module_prefix.decoder.embed_positions.weight.data = new_position_embeddings_weights
+    def update_positions_with_model(self, model, max_pos):
+        model.resize_position_embeddings(max_pos)
 
     def run_test(self):
         
@@ -94,7 +73,7 @@ class BarthezConversionScript(ConversionScript):
 
         config = AutoConfig.from_pretrained(lsg_path, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(lsg_path)
-        text = f"Paris est la {tokenizer.mask_token} de la France."
+        text = f"Paris is the {tokenizer.mask_token} of France."
 
         max_length = config.max_position_embeddings - 20
         hidden_size = config.hidden_size
@@ -107,11 +86,11 @@ class BarthezConversionScript(ConversionScript):
         from transformers import AutoModelForSeq2SeqLM, pipeline
 
         model = AutoModelForSeq2SeqLM.from_pretrained(lsg_path, trust_remote_code=True)
-        pipe = pipeline("fill-mask", model=model, tokenizer=tokenizer)
+        pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
         pipe_lsg = pipe(text)
 
         model = AutoModelForSeq2SeqLM.from_pretrained(initial_path, trust_remote_code=True)
-        pipe = pipeline("fill-mask", model=model, tokenizer=tokenizer)
+        pipe = pipeline("text-generation", model=model, tokenizer=tokenizer)
         pipe_initial = pipe(text)
   
         print("\n\n" + "="*5 + " LSG PIPELINE " + "="*5 + "\n")

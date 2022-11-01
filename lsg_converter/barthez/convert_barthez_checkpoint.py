@@ -1,7 +1,10 @@
-from .modeling_lsg_mbart import *
-from ..conversion_utils import ConversionScript
+from .modeling_lsg_barthez import *
+try:
+    from ..conversion_utils import ConversionScript
+except:
+    from conversion_utils import ConversionScript
 
-class MBartConversionScript(ConversionScript):
+class BarthezConversionScript(ConversionScript):
 
     _ARCHITECTURE_TYPE_DICT = {
         "MBartModel": ("LSGMBartModel", LSGMBartModel),

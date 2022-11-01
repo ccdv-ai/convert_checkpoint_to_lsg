@@ -1,5 +1,8 @@
 from .modeling_lsg_bart import *
-from ..conversion_utils import ConversionScript
+try:
+    from ..conversion_utils import ConversionScript
+except:
+    from conversion_utils import ConversionScript
 
 class BartConversionScript(ConversionScript):
 

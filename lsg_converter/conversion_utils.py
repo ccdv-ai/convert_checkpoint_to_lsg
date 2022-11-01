@@ -28,7 +28,9 @@ class ConversionScript():
         resize_lsg, 
         model_kwargs, 
         use_token_ids,
+        use_auth_token,
         config,
+        save_model,
         seed
         ):
         
@@ -42,7 +44,9 @@ class ConversionScript():
         self.resize_lsg = resize_lsg
         self.model_kwargs = model_kwargs
         self.use_token_ids = use_token_ids
+        self.use_auth_token = use_auth_token
         self.config = config
+        self.save_model = save_model
 
     def save(self, model, tokenizer):
 
@@ -74,8 +78,11 @@ class ConversionScript():
 
         # For Pegasus
         self.update_positions_with_model(model, self.max_sequence_length)
-    
-        self.save(model, tokenizer)
+
+        if self.save_model:
+            self.save(model, tokenizer)
+
+        return model, tokenizer
 
     def get_architecture(self):
         if self.architecture is not None:
@@ -100,10 +107,11 @@ class ConversionScript():
             self.initial_model, 
             architectures=lsg_architecture, 
             trust_remote_code=True, 
+            use_auth_token=self.use_auth_token,
             **json.loads(self.model_kwargs.replace("'", "\""))
             )
-        model = lsg_model.from_pretrained(self.initial_model, use_auth_token=True, config=config)
-        tokenizer = AutoTokenizer.from_pretrained(self.initial_model, use_auth_token=True, trust_remote_code=True)
+        model = lsg_model.from_pretrained(self.initial_model, use_auth_token=self.use_auth_token, config=config, trust_remote_code=True)
+        tokenizer = AutoTokenizer.from_pretrained(self.initial_model, use_auth_token=self.use_auth_token, trust_remote_code=True)
         return model, tokenizer
 
     def update_config(self, model, tokenizer):

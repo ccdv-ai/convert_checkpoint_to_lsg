@@ -1,25 +1,29 @@
-from .modeling_lsg_camembert import *
-from ..conversion_utils import ConversionScript
+from .modeling_lsg_bert import *
+try:
+    from ..conversion_utils import ConversionScript
+except:
+    from conversion_utils import ConversionScript
 
-class CamembertConversionScript(ConversionScript):
+class BertConversionScript(ConversionScript):
 
     _ARCHITECTURE_TYPE_DICT = {
-        "CamembertModel": ("LSGCamembertModel", LSGCamembertModel),
-        "CamembertForMaskedLM": ("LSGCamembertForMaskedLM", LSGCamembertForMaskedLM),
-        "CamembertForCausalLM": ("LSGCamembertForCausalLM", LSGCamembertForCausalLM),
-        "CamembertForMultipleChoice": ("LSGCamembertForMultipleChoice", LSGCamembertForMultipleChoice),
-        "CamembertForQuestionAnswering": ("LSGCamembertForQuestionAnswering", LSGCamembertForQuestionAnswering),
-        "CamembertForSequenceClassification": ("LSGCamembertForSequenceClassification", LSGCamembertForSequenceClassification),
-        "CamembertForTokenClassification": ("LSGCamembertForTokenClassification", LSGCamembertForTokenClassification),
+        "BertModel": ("LSGBertModel", LSGBertModel),
+        "BertForMaskedLM": ("LSGBertForMaskedLM", LSGBertForMaskedLM),
+        "BertForPreTraining": ("LSGBertForPreTraining", LSGBertForPreTraining),
+        "BertLMHeadModel": ("LSGBertLMHeadModel", LSGBertLMHeadModel),
+        "BertForMultipleChoice": ("LSGBertForMultipleChoice", LSGBertForMultipleChoice),
+        "BertForQuestionAnswering": ("LSGBertForQuestionAnswering", LSGBertForQuestionAnswering),
+        "BertForSequenceClassification": ("LSGBertForSequenceClassification", LSGBertForSequenceClassification),
+        "BertForTokenClassification": ("LSGBertForTokenClassification", LSGBertForTokenClassification)
     }
     _ARCHITECTURE_TYPE_DICT = {**{"LSG" + k: v for k, v in _ARCHITECTURE_TYPE_DICT.items()}, **_ARCHITECTURE_TYPE_DICT}
 
-    _BASE_ARCHITECTURE_TYPE = "CamembertModel"
-    _DEFAULT_ARCHITECTURE_TYPE = "CamembertForMaskedLM"
-    _CONFIG_MODULE = LSGCamembertConfig
+    _BASE_ARCHITECTURE_TYPE = "BertModel"
+    _DEFAULT_ARCHITECTURE_TYPE = "BertForPreTraining"
+    _CONFIG_MODULE = LSGBertConfig
 
-    _DEFAULT_CONFIG_POSITIONAL_OFFSET = 2
-    _DEFAULT_POSITIONAL_OFFSET = 2
+    _DEFAULT_CONFIG_POSITIONAL_OFFSET = 0
+    _DEFAULT_POSITIONAL_OFFSET = 0
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
@@ -27,7 +31,7 @@ class CamembertConversionScript(ConversionScript):
     def get_module(self, model, is_base_architecture):
         if is_base_architecture:
             return model
-        return model.roberta
+        return model.bert
 
     def update_global_randomly(self, module_prefix, bos_id, stride, keep_first_global):
 
@@ -35,13 +39,19 @@ class CamembertConversionScript(ConversionScript):
         from torch.distributions.multivariate_normal import MultivariateNormal
 
         u = module_prefix.embeddings.word_embeddings.weight.clone()
+
         cov = torch.cov(u.T)
         m = MultivariateNormal(u.mean(dim=0), cov)
         w = m.sample((512,))
-
-        positions = module_prefix.embeddings.position_embeddings.weight.clone()[self._DEFAULT_POSITIONAL_OFFSET:]
-        positions = self.order_positions(positions, stride)
         w[0] = u[bos_id]
+
+        positions = module_prefix.embeddings.position_embeddings.weight.clone()
+        positions = self.order_positions(positions, stride)
+
+        if self.use_token_ids:
+            token_ids = module_prefix.embeddings.token_type_embeddings.weight.clone()
+            positions += token_ids[0].unsqueeze(0)
+            w[0] = u[bos_id] + token_ids[0]
 
         if keep_first_global:
             module_prefix.embeddings.global_embeddings.weight.data[1:] = (w + positions)[1:]
@@ -51,10 +61,15 @@ class CamembertConversionScript(ConversionScript):
     def update_global(self, module_prefix, bos_id, mask_id, stride, keep_first_global):
 
         u = module_prefix.embeddings.word_embeddings.weight.clone()
-        positions = module_prefix.embeddings.position_embeddings.weight.clone()[self._DEFAULT_POSITIONAL_OFFSET:]
+        positions = module_prefix.embeddings.position_embeddings.weight.clone()
         positions = self.order_positions(positions, stride)
+
         positions[0] += u[bos_id]
         positions[1:] += u[mask_id].unsqueeze(0)
+
+        if self.use_token_ids:
+            token_ids = module_prefix.embeddings.token_type_embeddings.weight.clone()
+            positions += token_ids[0].unsqueeze(0)
 
         if keep_first_global:
             module_prefix.embeddings.global_embeddings.weight.data[1:] = positions[1:]
@@ -67,23 +82,22 @@ class CamembertConversionScript(ConversionScript):
         current_max_position = position_embeddings_weights.size()[0]
 
         new_position_embeddings_weights = torch.cat([
-            position_embeddings_weights[:self._DEFAULT_POSITIONAL_OFFSET]] + 
-            [position_embeddings_weights[self._DEFAULT_POSITIONAL_OFFSET:] for _ in range(max_pos//current_max_position + 1)], 
-            dim=0)[:max_pos + self._DEFAULT_POSITIONAL_OFFSET]
+            position_embeddings_weights for _ in range(max_pos//current_max_position + 1)
+            ], dim=0)[:max_pos]
 
-        module_prefix.embeddings.position_ids = torch.arange(max_pos + self._DEFAULT_POSITIONAL_OFFSET, device=module_prefix.embeddings.position_ids.device).unsqueeze(0)
+        module_prefix.embeddings.position_ids = torch.arange(max_pos, device=module_prefix.embeddings.position_ids.device).unsqueeze(0)
         module_prefix.embeddings.position_embeddings.weight.data = new_position_embeddings_weights
 
     def run_test(self):
         
         from transformers import AutoConfig, AutoTokenizer
-        
+
         initial_path = self.initial_model
         lsg_path = self.model_name
 
         config = AutoConfig.from_pretrained(lsg_path, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(lsg_path)
-        text = f"Paris est la {tokenizer.mask_token} de la France."
+        text = f"Paris is the {tokenizer.mask_token} of France."
 
         max_length = config.max_position_embeddings - 20
         hidden_size = config.hidden_size

@@ -1,5 +1,8 @@
 from .modeling_lsg_roberta import *
-from ..conversion_utils import ConversionScript
+try:
+    from ..conversion_utils import ConversionScript
+except:
+    from conversion_utils import ConversionScript
 
 class RobertaConversionScript(ConversionScript):
 

@@ -1,21 +1,26 @@
-from .modeling_lsg_distilbert import *
-from ..conversion_utils import ConversionScript
+from .modeling_lsg_electra import *
+try:
+    from ..conversion_utils import ConversionScript
+except:
+    from conversion_utils import ConversionScript
 
-class DistilBertConversionScript(ConversionScript):
+class ElectraConversionScript(ConversionScript):
 
     _ARCHITECTURE_TYPE_DICT = {
-        "DistilBertModel": ("LSGDistilBertModel", LSGDistilBertModel),
-        "DistilBertForMaskedLM": ("LSGDistilBertForMaskedLM", LSGDistilBertForMaskedLM),
-        "DistilBertForMultipleChoice": ("LSGDistilBertForMultipleChoice", LSGDistilBertForMultipleChoice),
-        "DistilBertForQuestionAnswering": ("LSGDistilBertForQuestionAnswering", LSGDistilBertForQuestionAnswering),
-        "DistilBertForSequenceClassification": ("LSGDistilBertForSequenceClassification", LSGDistilBertForSequenceClassification),
-        "DistilBertForTokenClassification": ("LSGDistilBertForTokenClassification", LSGDistilBertForTokenClassification),
+        "ElectraModel": ("LSGElectraModel", LSGElectraModel),
+        "ElectraForCausalLM": ("LSGElectraForCausalLM", LSGElectraForCausalLM),
+        "ElectraForMaskedLM": ("LSGElectraForMaskedLM", LSGElectraForMaskedLM),
+        "ElectraForPreTraining": ("LSGElectraForPreTraining", LSGElectraForPreTraining),
+        "ElectraForMultipleChoice": ("LSGElectraForMultipleChoice", LSGElectraForMultipleChoice),
+        "ElectraForQuestionAnswering": ("LSGElectraForQuestionAnswering", LSGElectraForQuestionAnswering),
+        "ElectraForSequenceClassification": ("LSGElectraForSequenceClassification", LSGElectraForSequenceClassification),
+        "ElectraForTokenClassification": ("LSGElectraForTokenClassification", LSGElectraForTokenClassification)
     }
     _ARCHITECTURE_TYPE_DICT = {**{"LSG" + k: v for k, v in _ARCHITECTURE_TYPE_DICT.items()}, **_ARCHITECTURE_TYPE_DICT}
 
-    _BASE_ARCHITECTURE_TYPE = "DistilBertModel"
-    _DEFAULT_ARCHITECTURE_TYPE = "DistilBertForMaskedLM"
-    _CONFIG_MODULE = LSGDistilBertConfig
+    _BASE_ARCHITECTURE_TYPE = "ElectraModel"
+    _DEFAULT_ARCHITECTURE_TYPE = "ElectraForPreTraining"
+    _CONFIG_MODULE = LSGElectraConfig
 
     _DEFAULT_CONFIG_POSITIONAL_OFFSET = 0
     _DEFAULT_POSITIONAL_OFFSET = 0
@@ -26,7 +31,7 @@ class DistilBertConversionScript(ConversionScript):
     def get_module(self, model, is_base_architecture):
         if is_base_architecture:
             return model
-        return model.distilbert
+        return model.electra
 
     def update_global_randomly(self, module_prefix, bos_id, stride, keep_first_global):
 
@@ -34,14 +39,19 @@ class DistilBertConversionScript(ConversionScript):
         from torch.distributions.multivariate_normal import MultivariateNormal
 
         u = module_prefix.embeddings.word_embeddings.weight.clone()
+
         cov = torch.cov(u.T)
         m = MultivariateNormal(u.mean(dim=0), cov)
         w = m.sample((512,))
+        w[0] = u[bos_id]
 
         positions = module_prefix.embeddings.position_embeddings.weight.clone()
         positions = self.order_positions(positions, stride)
 
-        w[0] = u[bos_id]
+        if self.use_token_ids:
+            token_ids = module_prefix.embeddings.token_type_embeddings.weight.clone()
+            positions += token_ids[0].unsqueeze(0)
+            w[0] = u[bos_id] + token_ids[0]
 
         if keep_first_global:
             module_prefix.embeddings.global_embeddings.weight.data[1:] = (w + positions)[1:]
@@ -57,6 +67,10 @@ class DistilBertConversionScript(ConversionScript):
         positions[0] += u[bos_id]
         positions[1:] += u[mask_id].unsqueeze(0)
 
+        if self.use_token_ids:
+            token_ids = module_prefix.embeddings.token_type_embeddings.weight.clone()
+            positions += token_ids[0].unsqueeze(0)
+
         if keep_first_global:
             module_prefix.embeddings.global_embeddings.weight.data[1:] = positions[1:]
         else:
@@ -67,9 +81,9 @@ class DistilBertConversionScript(ConversionScript):
         position_embeddings_weights = module_prefix.embeddings.position_embeddings.weight.clone()
         current_max_position = position_embeddings_weights.size()[0]
 
-        new_position_embeddings_weights = torch.cat(
-            [position_embeddings_weights for _ in range(max_pos//current_max_position + 1)], 
-            dim=0)[:max_pos]
+        new_position_embeddings_weights = torch.cat([
+            position_embeddings_weights for _ in range(max_pos//current_max_position + 1)
+            ], dim=0)[:max_pos]
 
         module_prefix.embeddings.position_ids = torch.arange(max_pos, device=module_prefix.embeddings.position_ids.device).unsqueeze(0)
         module_prefix.embeddings.position_embeddings.weight.data = new_position_embeddings_weights
@@ -77,7 +91,7 @@ class DistilBertConversionScript(ConversionScript):
     def run_test(self):
         
         from transformers import AutoConfig, AutoTokenizer
-        
+
         initial_path = self.initial_model
         lsg_path = self.model_name
 
@@ -86,9 +100,9 @@ class DistilBertConversionScript(ConversionScript):
         text = f"Paris is the {tokenizer.mask_token} of France."
 
         max_length = config.max_position_embeddings - 20
-        hidden_size = config.hidden_size
+        hidden_size = config.embedding_size
 
-        self.run_models(lsg_path, max_length, hidden_size, text, AUTO_MAP, gradient_checkpointing=False)
+        self.run_models(lsg_path, max_length, hidden_size, text, AUTO_MAP)
         self.run_pipeline(lsg_path, initial_path, tokenizer, text)
 
     def run_pipeline(self, lsg_path, initial_path, tokenizer, text):
@@ -103,9 +117,9 @@ class DistilBertConversionScript(ConversionScript):
         pipe = pipeline("fill-mask", model=model, tokenizer=tokenizer)
         pipe_initial = pipe(text)
   
-        print("\n\n" + "="*5 + " LSG PIPELINE " + "="*5 + "\n")
+        print("\n\n" + "="*5 + " LSG PIPELINE (for generator only)" + "="*5 + "\n")
         print(text)
         print(pipe_lsg[0])
-        print("\n\n" + "="*5 + " INITIAL PIPELINE " + "="*5 + "\n")
+        print("\n\n" + "="*5 + " INITIAL PIPELINE (for generator only)" + "="*5 + "\n")
         print(text)
         print(pipe_initial[0])

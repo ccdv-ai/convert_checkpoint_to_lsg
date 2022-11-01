@@ -10,17 +10,17 @@ from transformers import (
     set_seed,
 )
 
-from convert_models.albert.convert_albert_checkpoint import *
-from convert_models.bart.convert_bart_checkpoint import *
-from convert_models.barthez.convert_barthez_checkpoint import *
-from convert_models.bert.convert_bert_checkpoint import *
-from convert_models.camembert.convert_camembert_checkpoint import *
-from convert_models.distilbert.convert_distilbert_checkpoint import *
-from convert_models.electra.convert_electra_checkpoint import *
-from convert_models.mbart.convert_mbart_checkpoint import *
-from convert_models.pegasus.convert_pegasus_checkpoint import *
-from convert_models.roberta.convert_roberta_checkpoint import *
-from convert_models.xlm_roberta.convert_xlm_roberta_checkpoint import *
+from lsg_converter.albert.convert_albert_checkpoint import *
+from lsg_converter.bart.convert_bart_checkpoint import *
+from lsg_converter.barthez.convert_barthez_checkpoint import *
+from lsg_converter.bert.convert_bert_checkpoint import *
+from lsg_converter.camembert.convert_camembert_checkpoint import *
+from lsg_converter.distilbert.convert_distilbert_checkpoint import *
+from lsg_converter.electra.convert_electra_checkpoint import *
+from lsg_converter.mbart.convert_mbart_checkpoint import *
+from lsg_converter.pegasus.convert_pegasus_checkpoint import *
+from lsg_converter.roberta.convert_roberta_checkpoint import *
+from lsg_converter.xlm_roberta.convert_xlm_roberta_checkpoint import *
 
 
 _AUTH_MODELS = {
@@ -100,6 +100,13 @@ class FileArguments:
             "help": "Add token_type_ids (0) to global embeddings if the model allows it"}
     )
 
+    use_auth_token: bool = field(
+        default=False,
+        metadata={
+            "help": "Either use auth token (for private models)"}
+    )
+
+
     run_test: bool = field(
         default=False,
         metadata={
@@ -129,7 +136,7 @@ def main():
     set_seed(args.seed)
     
     # Get config
-    config = AutoConfig.from_pretrained(args.initial_model, trust_remote_code=True, use_auth_token=True)
+    config = AutoConfig.from_pretrained(args.initial_model, trust_remote_code=True, use_auth_token=args.use_auth_token)
     model_type = config.model_type
 
     if model_type in _AUTH_MODELS.keys():
@@ -144,7 +151,9 @@ def main():
             resize_lsg=args.resize_lsg, 
             model_kwargs=args.model_kwargs, 
             use_token_ids=args.use_token_ids,
+            use_auth_token=args.use_auth_token,
             config=config,
+            save_model=True,
             seed=args.seed
             )
         converter.process()
