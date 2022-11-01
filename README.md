@@ -1,10 +1,13 @@
 # LSG Attention: Extrapolation of pretrained Transformers to long sequences
 
-Under review
+Under review, ArXiv [paper](https://arxiv.org/abs/2210.15497)
 
-Requires `transformers >= 4.22.0`
+Requires `transformers >= 4.22.2`
 
-`pip install lsg-converter`
+Optional package to convert models:
+```bash
+pip install lsg-converter
+```
 
 * [Compatible models](#compatible-models)
 * [Efficiency](#efficiency)
