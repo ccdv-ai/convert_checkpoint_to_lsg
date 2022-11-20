@@ -59,7 +59,7 @@ class BartConversionScript(ConversionScript):
         positions[1:] += u[mask_id].unsqueeze(0)
 
         if keep_first_global:
-            module_prefix.encoder.global_embeddings.weight.data[1:] = positions[self._DEFAULT_POSITIONAL_OFFSET:]
+            module_prefix.encoder.global_embeddings.weight.data[1:] = positions[1:]
         else:
             module_prefix.encoder.global_embeddings.weight.data = positions
 
