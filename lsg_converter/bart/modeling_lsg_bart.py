@@ -435,7 +435,8 @@ class LSGBartEncoderAttention(BaseSelfAttention):
         keys = keys.sum(dim=-2) / (mask + 1e-6)
         values = values.sum(dim=-2) / (mask + 1e-6)
 
-        mask = (1. - mask.clamp(0, 1)) * torch.finfo(mask.dtype).min
+        mask = (1. - mask.clamp(0, 1)) 
+        mask *= torch.finfo(mask.dtype).min
         return keys.reshape(n, h, -1, d), values.reshape(n, h, -1, d), mask.expand(-1, h, -1, -1).transpose(-1, -2)
 
     def get_sparse_tokens_with_stride(self, keys, values, mask):
@@ -500,7 +501,8 @@ class LSGBartEncoderAttention(BaseSelfAttention):
         keys /= mask + 1e-8
         values /= mask + 1e-8
 
-        mask = (1. - mask.clamp(0, 1)) * torch.finfo(mask.dtype).min
+        mask = (1. - mask.clamp(0, 1)) 
+        mask *= torch.finfo(mask.dtype).min
         return keys.reshape(n, h, -1, d), values.reshape(n, h, -1, d), mask.transpose(-1, -2).reshape(n, h, 1, -1)
 
     def lsh_round(self, keys, values, mask, output_size):
