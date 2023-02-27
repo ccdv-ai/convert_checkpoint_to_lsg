@@ -3,8 +3,9 @@
 __pycache__/*
 .gitignore
 convert.sh
-convert2.sh
-convert3.sh
+convert_all_models.sh
+replace_models.py
+test_memory.py
 lsg_converter/*/__pycache__
 block_local_attention/test_block_local.py
 lsg_converter.egg-info/*

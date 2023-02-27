@@ -1,6 +1,8 @@
 # LSG Attention: Extrapolation of pretrained Transformers to long sequences
 
-Under review, ArXiv [paper](https://arxiv.org/abs/2210.15497)
+ArXiv [paper](https://arxiv.org/abs/2210.15497) \
+Accepted as a conference paper in PAKDD 2023.
+
 
 Requires `transformers >= 4.22.2`
 
