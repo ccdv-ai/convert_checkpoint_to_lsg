@@ -985,4 +985,4 @@ try:
         str_to_class(value.split(".")[-1]).register_for_auto_class(key)
 except:
     warn("AutoRegister isn't available, you'll have to manually copy modeling.py after .save_pretrained(...).")
-    warn("Update to transformers >= 4.17.0 to fix.")
+    warn("Update to transformers >= 4.23.1 to fix.")

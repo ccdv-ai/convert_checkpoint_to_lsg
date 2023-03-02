@@ -4,7 +4,7 @@ ArXiv [paper](https://arxiv.org/abs/2210.15497) \
 Accepted as a conference paper in PAKDD 2023.
 
 
-Requires `transformers >= 4.22.2`
+Requires `transformers >= 4.23.1`
 
 Optional package to convert models:
 ```bash
