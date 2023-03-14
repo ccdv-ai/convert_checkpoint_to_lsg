@@ -51,6 +51,7 @@ Memory and training speed for a binary classification task with 4x4096 tokens ba
 | LSG-RoBERTa 32/32 (norm)   | 1.20 s/step      | 24.53 Gb                | 22.53 Gb                |
 
 
+![attn](img/benchmark.png)
 
 # Convert checkpoint to LSG 
 
