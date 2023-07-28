@@ -233,19 +233,25 @@ class CausalAttentionProduct(nn.Module):
         del key_layer
 
         if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in RobertaModel forward() function)
-            attention_scores = attention_scores + attention_mask
-
             # Add causal mask
             causal_shape = (self.block_size, self.block_size) if causal_shape is None else causal_shape
             causal_mask = torch.tril(
                 torch.ones(*causal_shape, device=attention_mask.device, dtype=attention_scores.dtype), 
                 diagonal=-1
                 ) 
-            causal_mask = causal_mask.T * torch.finfo(attention_scores.dtype).min
-            attention_scores[..., -causal_shape[0]:, -causal_shape[1] + 1:] = causal_mask[:, 1:]
+            
+            # Min value
+            dtype_min = torch.tensor(
+                        torch.finfo(attention_scores.dtype).min, device=attention_scores.device, dtype=attention_scores.dtype
+                    )
 
+            # Build causal + attention_mask
+            causal_mask = torch.nn.functional.pad(causal_mask.T * dtype_min, (attention_mask.size()[-1] - self.block_size, 0), value=0)
+            attention_mask = torch.max(attention_mask + causal_mask.unsqueeze(0).unsqueeze(0).unsqueeze(0), dtype_min)
+
+            attention_scores = attention_scores + attention_mask
             del attention_mask
+            del causal_mask
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
@@ -777,7 +783,7 @@ class LSGTransformer(Transformer):
             attn_mask[..., 0] = mask_value
 
         attn_mask = torch.finfo(x.dtype).min*(1 - attn_mask).unsqueeze(1).unsqueeze(1)
-
+        
         encoder_outputs = super().forward(
             x=x,
             attn_mask=attn_mask,
@@ -822,36 +828,12 @@ class LSGDistilBertModel(LSGDistilBertPreTrainedModel, DistilBertModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-    def forward(
-        self,
-        input_ids: Optional[torch.Tensor] = None,
-        attention_mask: Optional[torch.Tensor] = None,
-        head_mask: Optional[torch.Tensor] = None,
-        inputs_embeds: Optional[torch.Tensor] = None,
-        output_attentions: Optional[bool] = None,
-        output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
-    ) -> Union[BaseModelOutput, Tuple[torch.Tensor, ...]]:
-
-        
-        if input_ids is None and inputs_embeds is not None:
-            inputs_embeds = self.embeddings(None, inputs_embeds)
-            if attention_mask is None:
-                n, t, d = inputs_embeds.size()
-                attention_mask = torch.ones(n, t - self.num_global_tokens, device=inputs_embeds.device)
-
-        return super().forward(
-            input_ids=input_ids, 
-            attention_mask=attention_mask, 
-            head_mask=head_mask, 
-            inputs_embeds=inputs_embeds, 
-            output_attentions=output_attentions, 
-            output_hidden_states=output_hidden_states, 
-            return_dict=return_dict
-            )
 
 class LSGDistilBertForMaskedLM(LSGDistilBertPreTrainedModel, DistilBertForMaskedLM):
 
+    _keys_to_ignore_on_load_missing = ["vocab_projector.weight"]
+    _tied_weights_keys = ["vocab_projector.weight"]
+    
     def __init__(self, config):
 
         LSGDistilBertPreTrainedModel.__init__(self, config)

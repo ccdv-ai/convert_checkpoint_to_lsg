@@ -139,7 +139,7 @@ class BlockLocalSelfAttention(nn.Module):
         return context_layer
 
     def causal_attention_product(self, query_layer, key_layer, value_layer, attention_mask=None, causal_shape=None):
-        
+    
         d = query_layer.shape[-1]
 
         # Take the dot product between "query" and "key" to get the raw attention scores.
@@ -148,18 +148,26 @@ class BlockLocalSelfAttention(nn.Module):
         del query_layer
         del key_layer
 
-        # Apply the attention mask
-        attention_scores = attention_scores + attention_mask[..., :1, :]
-
         # Add causal mask
         causal_shape = (self.block_size, self.block_size) if causal_shape is None else causal_shape
         causal_mask = torch.tril(
             torch.ones(*causal_shape, device=attention_mask.device, dtype=attention_scores.dtype), 
             diagonal=-1
             ) 
-        causal_mask = causal_mask.T * torch.finfo(attention_scores.dtype).min
-        attention_scores[..., -causal_shape[0]:, -causal_shape[1] + 1:] = causal_mask[:, 1:]
+        
+        dtype_min = torch.tensor(
+                    torch.finfo(attention_scores.dtype).min, device=attention_scores.device, dtype=attention_scores.dtype
+                )
+
+        causal_mask = self.pad_inputs(causal_mask.T * dtype_min, (attention_mask.size()[-1] - self.block_size, 0), value=0)
+
+        attention_mask = attention_mask[..., -1:, :] + causal_mask.unsqueeze(0).unsqueeze(0).unsqueeze(0)
+        attention_mask = torch.max(attention_mask, dtype_min)
+
+        attention_scores = attention_scores + attention_mask
+
         del attention_mask
+        del causal_mask
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)

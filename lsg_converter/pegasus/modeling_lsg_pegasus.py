@@ -678,6 +678,8 @@ class LSGPegasusEncoderLayer(PegasusEncoderLayer):
 class LSGPegasusPreTrainedModel(PegasusPreTrainedModel):
 
     config_class = LSGPegasusConfig
+    base_model_prefix = "model"
+    supports_gradient_checkpointing = True
 
     def _set_gradient_checkpointing(self, module, value=False):
         if isinstance(module, (PegasusDecoder, PegasusEncoder, LSGPegasusEncoder)):
@@ -880,8 +882,13 @@ class LSGPegasusEncoder(LSGPegasusPreTrainedModel, PegasusEncoder):
             if output_hidden_states:
                 encoder_states = encoder_states + (hidden_states,)
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
-            dropout_probability = random.uniform(0, 1)
-            if self.training and (dropout_probability < self.layerdrop):  # skip the layer
+            to_drop = False
+            if self.training:
+                dropout_probability = torch.rand([])
+                if dropout_probability < self.layerdrop:  # skip the layer
+                    to_drop = True
+
+            if to_drop:
                 layer_outputs = (None, None)
             else:
                 if self.gradient_checkpointing and self.training:
@@ -924,6 +931,8 @@ class LSGPegasusEncoder(LSGPegasusPreTrainedModel, PegasusEncoder):
 
 
 class LSGPegasusModel(LSGPegasusPreTrainedModel, PegasusModel):
+
+    _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
 
     def __init__(self, config: LSGPegasusConfig):
 
@@ -1032,13 +1041,8 @@ class LSGPegasusModel(LSGPegasusPreTrainedModel, PegasusModel):
 class LSGPegasusForConditionalGeneration(LSGPegasusPreTrainedModel, PegasusForConditionalGeneration):
 
     base_model_prefix = "model"
-    _keys_to_ignore_on_load_missing = [
-        r"final_logits_bias",
-        r"encoder\.version",
-        r"decoder\.version",
-        r"lm_head\.weight",
-        r"embed_positions\.weight",
-    ]
+    _keys_to_ignore_on_load_missing = ["final_logits_bias"]
+    _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight", "lm_head.weight"]
 
     def __init__(self, config: LSGPegasusConfig):
 
@@ -1064,6 +1068,8 @@ class LSGPegasusDecoderWrapper(LSGPegasusPreTrainedModel, PegasusDecoderWrapper)
 
 
 class LSGPegasusForCausalLM(LSGPegasusPreTrainedModel, PegasusForCausalLM):
+
+    _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):
 

@@ -188,19 +188,25 @@ class CausalAttentionProduct(nn.Module):
         del key_layer
 
         if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in RobertaModel forward() function)
-            attention_scores = attention_scores + attention_mask
-
             # Add causal mask
             causal_shape = (self.block_size, self.block_size) if causal_shape is None else causal_shape
             causal_mask = torch.tril(
                 torch.ones(*causal_shape, device=attention_mask.device, dtype=attention_scores.dtype), 
                 diagonal=-1
                 ) 
-            causal_mask = causal_mask.T * torch.finfo(attention_scores.dtype).min
-            attention_scores[..., -causal_shape[0]:, -causal_shape[1] + 1:] = causal_mask[:, 1:]
+            
+            # Min value
+            dtype_min = torch.tensor(
+                        torch.finfo(attention_scores.dtype).min, device=attention_scores.device, dtype=attention_scores.dtype
+                    )
 
+            # Build causal + attention_mask
+            causal_mask = torch.nn.functional.pad(causal_mask.T * dtype_min, (attention_mask.size()[-1] - self.block_size, 0), value=0)
+            attention_mask = torch.max(attention_mask + causal_mask.unsqueeze(0).unsqueeze(0).unsqueeze(0), dtype_min)
+
+            attention_scores = attention_scores + attention_mask
             del attention_mask
+            del causal_mask
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
@@ -971,6 +977,9 @@ class LSGRobertaPreTrainedModel(RobertaPreTrainedModel):
     """
 
     config_class = LSGXLMRobertaConfig
+    base_model_prefix = "roberta"
+    supports_gradient_checkpointing = True
+    _no_split_modules = []
 
     def _set_gradient_checkpointing(self, module, value=False):
         if isinstance(module, (RobertaEncoder, LSGRobertaEncoder)):
@@ -982,9 +991,6 @@ class LSGXLMRobertaModel(LSGRobertaPreTrainedModel, RobertaModel):
     This class overrides :class:`~transformers.RobertaModel`. Please check the superclass for the appropriate
     documentation alongside usage examples.
     """
-
-    config_class = LSGXLMRobertaConfig
-
 
     def __init__(self, config, add_pooling_layer=True):
         
@@ -1022,10 +1028,7 @@ class LSGXLMRobertaModel(LSGRobertaPreTrainedModel, RobertaModel):
 
 class LSGXLMRobertaForCausalLM(LSGRobertaPreTrainedModel, RobertaForCausalLM):
 
-    config_class = LSGXLMRobertaConfig
-    _keys_to_ignore_on_save = [r"lm_head.decoder.weight", r"lm_head.decoder.bias"]
-    _keys_to_ignore_on_load_missing = [r"position_ids", r"lm_head.decoder.weight", r"lm_head.decoder.bias"]
-    _keys_to_ignore_on_load_unexpected = [r"pooler"]
+    _tied_weights_keys = ["lm_head.decoder.weight", "lm_head.decoder.bias"]
 
     def __init__(self, config):
 
@@ -1053,6 +1056,7 @@ class LSGXLMRobertaForMaskedLM(LSGRobertaPreTrainedModel, RobertaForMaskedLM):
     _keys_to_ignore_on_save = [r"lm_head.decoder.weight", r"lm_head.decoder.bias"]
     _keys_to_ignore_on_load_missing = [r"position_ids", r"lm_head.decoder.weight", r"lm_head.decoder.bias"]
     _keys_to_ignore_on_load_unexpected = [r"pooler"]
+    _tied_weights_keys = ["lm_head.decoder.weight", "lm_head.decoder.bias"]
 
     def __init__(self, config):
 
@@ -1079,8 +1083,6 @@ class LSGXLMRobertaForSequenceClassification(LSGRobertaPreTrainedModel, RobertaF
     This class overrides :class:`~transformers.RobertaForSequenceClassification`. Please check the superclass for the
     appropriate documentation alongside usage examples.
     """
-    config_class = LSGXLMRobertaConfig
-    _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config):
         
@@ -1121,9 +1123,6 @@ class LSGXLMRobertaForTokenClassification(LSGRobertaPreTrainedModel, RobertaForT
     This class overrides :class:`~transformers.RobertaForTokenClassification`. Please check the superclass for the
     appropriate documentation alongside usage examples.
     """
-    config_class = LSGXLMRobertaConfig
-    _keys_to_ignore_on_load_unexpected = [r"pooler"]
-    _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config):
         
@@ -1147,9 +1146,6 @@ class LSGXLMRobertaForQuestionAnswering(LSGRobertaPreTrainedModel, RobertaForQue
     This class overrides :class:`~transformers.RobertaForQuestionAnswering`. Please check the superclass for the
     appropriate documentation alongside usage examples.
     """
-    config_class = LSGXLMRobertaConfig
-    _keys_to_ignore_on_load_unexpected = [r"pooler"]
-    _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config):
         

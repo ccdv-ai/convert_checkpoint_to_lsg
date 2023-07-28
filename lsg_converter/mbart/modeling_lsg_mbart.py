@@ -829,8 +829,13 @@ class LSGMBartEncoder(LSGMBartPretrainedModel, MBartEncoder):
             if output_hidden_states:
                 encoder_states = encoder_states + (hidden_states,)
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
-            dropout_probability = random.uniform(0, 1)
-            if self.training and (dropout_probability < self.layerdrop):  # skip the layer
+            to_drop = False
+            if self.training:
+                dropout_probability = torch.rand([])
+                if dropout_probability < self.layerdrop:  # skip the layer
+                    to_drop = True
+
+            if to_drop:
                 layer_outputs = (None, None)
             else:
                 if self.gradient_checkpointing and self.training:
@@ -873,6 +878,9 @@ class LSGMBartEncoder(LSGMBartPretrainedModel, MBartEncoder):
 
 
 class LSGMBartModel(LSGMBartPretrainedModel, MBartModel):
+
+    _keys_to_ignore_on_load_missing = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
+    _tied_weights_keys = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
 
     def __init__(self, config):
 
@@ -982,7 +990,10 @@ class LSGMBartForConditionalGeneration(LSGMBartPretrainedModel, MBartForConditio
         r"encoder.version",
         r"decoder.version",
         r"lm_head.weight",
+        "encoder.embed_tokens.weight",
+        "decoder.embed_tokens.weight",
     ]
+    _tied_weights_keys = ["model.encoder.embed_tokens.weight", "model.decoder.embed_tokens.weight", "lm_head.weight"]
 
     def __init__(self, config):
 
@@ -996,6 +1007,9 @@ class LSGMBartForConditionalGeneration(LSGMBartPretrainedModel, MBartForConditio
 
 
 class LSGMBartForSequenceClassification(LSGMBartPretrainedModel, MBartForSequenceClassification):
+
+    _keys_to_ignore_on_load_missing = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
+    _tied_weights_keys = ["model.encoder.embed_tokens.weight", "model.decoder.embed_tokens.weight"]
 
     def __init__(self, config, **kwargs):
 
@@ -1013,6 +1027,9 @@ class LSGMBartForSequenceClassification(LSGMBartPretrainedModel, MBartForSequenc
 
 class LSGMBartForQuestionAnswering(LSGMBartPretrainedModel, MBartForQuestionAnswering):
 
+    _keys_to_ignore_on_load_missing = ["encoder.embed_tokens.weight", "decoder.embed_tokens.weight"]
+    _tied_weights_keys = ["model.encoder.embed_tokens.weight", "model.decoder.embed_tokens.weight"]
+
     def __init__(self, config):
 
         LSGMBartPretrainedModel.__init__(self, config)
@@ -1027,6 +1044,9 @@ class LSGMBartForQuestionAnswering(LSGMBartPretrainedModel, MBartForQuestionAnsw
 
 
 class LSGMBartForCausalLM(LSGMBartPretrainedModel, MBartForCausalLM):
+
+    _keys_to_ignore_on_load_missing = ["lm_head.weight"]
+    _tied_weights_keys = ["lm_head.weight"]
 
     def __init__(self, config):
 

@@ -202,7 +202,7 @@ class ConversionScript():
 
             model = getattr(sys.modules["transformers"], name)
             print("\n\n" + "="*5 + " " + name + " " + "="*5 + "\n")
-            model = model.from_pretrained(lsg_path, trust_remote_code=True, is_decoder="Causal" in name)
+            model = model.from_pretrained(lsg_path, trust_remote_code=True, is_decoder="Causal" in name).train()
             
             if gradient_checkpointing:
                 model.gradient_checkpointing_enable()

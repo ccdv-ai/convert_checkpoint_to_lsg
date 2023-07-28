@@ -188,19 +188,25 @@ class CausalAttentionProduct(nn.Module):
         del key_layer
 
         if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in CamembertModel forward() function)
-            attention_scores = attention_scores + attention_mask
-
             # Add causal mask
             causal_shape = (self.block_size, self.block_size) if causal_shape is None else causal_shape
             causal_mask = torch.tril(
                 torch.ones(*causal_shape, device=attention_mask.device, dtype=attention_scores.dtype), 
                 diagonal=-1
                 ) 
-            causal_mask = causal_mask.T * torch.finfo(attention_scores.dtype).min
-            attention_scores[..., -causal_shape[0]:, -causal_shape[1] + 1:] = causal_mask[:, 1:]
+            
+            # Min value
+            dtype_min = torch.tensor(
+                        torch.finfo(attention_scores.dtype).min, device=attention_scores.device, dtype=attention_scores.dtype
+                    )
 
+            # Build causal + attention_mask
+            causal_mask = torch.nn.functional.pad(causal_mask.T * dtype_min, (attention_mask.size()[-1] - self.block_size, 0), value=0)
+            attention_mask = torch.max(attention_mask + causal_mask.unsqueeze(0).unsqueeze(0).unsqueeze(0), dtype_min)
+
+            attention_scores = attention_scores + attention_mask
             del attention_mask
+            del causal_mask
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
@@ -974,6 +980,8 @@ class LSGCamembertPreTrainedModel(CamembertPreTrainedModel):
     """
 
     config_class = LSGCamembertConfig
+    base_model_prefix = "roberta"
+    supports_gradient_checkpointing = True
 
     def _set_gradient_checkpointing(self, module, value=False):
         if isinstance(module, (CamembertEncoder, LSGCamembertEncoder)):
@@ -986,8 +994,7 @@ class LSGCamembertModel(LSGCamembertPreTrainedModel, CamembertModel):
     documentation alongside usage examples.
     """
 
-    config_class = LSGCamembertConfig
-
+    _no_split_modules = []
 
     def __init__(self, config, add_pooling_layer=True):
         
@@ -1025,9 +1032,7 @@ class LSGCamembertModel(LSGCamembertPreTrainedModel, CamembertModel):
 
 class LSGCamembertForCausalLM(LSGCamembertPreTrainedModel, CamembertForCausalLM):
 
-    _keys_to_ignore_on_save = [r"lm_head.decoder.weight", r"lm_head.decoder.bias"]
-    _keys_to_ignore_on_load_missing = [r"position_ids", r"lm_head.decoder.weight", r"lm_head.decoder.bias"]
-    _keys_to_ignore_on_load_unexpected = [r"pooler"]
+    _tied_weights_keys = ["lm_head.decoder.weight", "lm_head.decoder.bias"]
 
     def __init__(self, config):
 
@@ -1052,9 +1057,7 @@ class LSGCamembertForMaskedLM(LSGCamembertPreTrainedModel, CamembertForMaskedLM)
     documentation alongside usage examples.
     """
 
-    _keys_to_ignore_on_save = [r"lm_head.decoder.weight", r"lm_head.decoder.bias"]
-    _keys_to_ignore_on_load_missing = [r"position_ids", r"lm_head.decoder.weight", r"lm_head.decoder.bias"]
-    _keys_to_ignore_on_load_unexpected = [r"pooler"]
+    _tied_weights_keys = ["lm_head.decoder.weight", "lm_head.decoder.bias"]
 
     def __init__(self, config):
 
@@ -1082,8 +1085,6 @@ class LSGCamembertForSequenceClassification(LSGCamembertPreTrainedModel, Camembe
     appropriate documentation alongside usage examples.
     """
 
-    _keys_to_ignore_on_load_missing = [r"position_ids"]
-
     def __init__(self, config):
         
         LSGCamembertPreTrainedModel.__init__(self, config)
@@ -1104,8 +1105,6 @@ class LSGCamembertForMultipleChoice(LSGCamembertPreTrainedModel, CamembertForMul
     appropriate documentation alongside usage examples.
     """
 
-    _keys_to_ignore_on_load_missing = [r"position_ids"]
-
     def __init__(self, config):
         
         LSGCamembertPreTrainedModel.__init__(self, config)
@@ -1123,9 +1122,6 @@ class LSGCamembertForTokenClassification(LSGCamembertPreTrainedModel, CamembertF
     This class overrides :class:`~transformers.CamembertForTokenClassification`. Please check the superclass for the
     appropriate documentation alongside usage examples.
     """
-
-    _keys_to_ignore_on_load_unexpected = [r"pooler"]
-    _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config):
         
@@ -1149,9 +1145,6 @@ class LSGCamembertForQuestionAnswering(LSGCamembertPreTrainedModel, CamembertFor
     This class overrides :class:`~transformers.CamembertForQuestionAnswering`. Please check the superclass for the
     appropriate documentation alongside usage examples.
     """
-
-    _keys_to_ignore_on_load_unexpected = [r"pooler"]
-    _keys_to_ignore_on_load_missing = [r"position_ids"]
 
     def __init__(self, config):
         

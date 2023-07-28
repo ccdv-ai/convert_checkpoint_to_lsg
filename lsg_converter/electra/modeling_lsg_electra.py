@@ -189,19 +189,25 @@ class CausalAttentionProduct(nn.Module):
         del key_layer
 
         if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in ElectraModel forward() function)
-            attention_scores = attention_scores + attention_mask
-
             # Add causal mask
             causal_shape = (self.block_size, self.block_size) if causal_shape is None else causal_shape
             causal_mask = torch.tril(
                 torch.ones(*causal_shape, device=attention_mask.device, dtype=attention_scores.dtype), 
                 diagonal=-1
                 ) 
-            causal_mask = causal_mask.T * torch.finfo(attention_scores.dtype).min
-            attention_scores[..., -causal_shape[0]:, -causal_shape[1] + 1:] = causal_mask[:, 1:]
+            
+            # Min value
+            dtype_min = torch.tensor(
+                        torch.finfo(attention_scores.dtype).min, device=attention_scores.device, dtype=attention_scores.dtype
+                    )
 
+            # Build causal + attention_mask
+            causal_mask = torch.nn.functional.pad(causal_mask.T * dtype_min, (attention_mask.size()[-1] - self.block_size, 0), value=0)
+            attention_mask = torch.max(attention_mask + causal_mask.unsqueeze(0).unsqueeze(0).unsqueeze(0), dtype_min)
+
+            attention_scores = attention_scores + attention_mask
             del attention_mask
+            del causal_mask
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
@@ -1051,6 +1057,9 @@ class LSGElectraForMaskedLM(LSGElectraPreTrainedModel, ElectraForMaskedLM):
     documentation alongside usage examples.
     """
 
+    _keys_to_ignore_on_load_missing = ["generator_lm_head.weight"]
+    _tied_weights_keys = ["generator_lm_head.weight"]
+
     config_class = LSGElectraConfig
 
     def __init__(self, config):
@@ -1107,6 +1116,9 @@ class LSGElectraForMultipleChoice(LSGElectraPreTrainedModel, ElectraForMultipleC
 
 
 class LSGElectraForCausalLM(LSGElectraPreTrainedModel, ElectraForCausalLM):
+
+    _keys_to_ignore_on_load_missing = ["generator_lm_head.weight"]
+    _tied_weights_keys = ["generator_lm_head.weight"]
 
     def __init__(self, config):
 

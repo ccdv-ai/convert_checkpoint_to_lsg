@@ -4,6 +4,7 @@ __pycache__/*
 .gitignore
 convert.sh
 convert_all_models.sh
+convert_single_model.sh
 replace_models.py
 test_memory.py
 lsg_converter/*/__pycache__
@@ -11,3 +12,6 @@ block_local_attention/test_block_local.py
 lsg_converter.egg-info/*
 dist
 update_package.sh
+llama_test/*
+output_test/*
+test_flash_attn.py
