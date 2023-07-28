@@ -1044,8 +1044,6 @@ class LSGCamembertForCausalLM(LSGCamembertPreTrainedModel, CamembertForCausalLM)
         self.roberta = LSGCamembertModel(config, add_pooling_layer=False)
         self.lm_head = CamembertLMHead(config)
 
-        # The LM head weights require special treatment only when they are tied with the word embeddings
-        self.update_keys_to_ignore(config, ["lm_head.decoder.weight"])
 
         # Initialize weights and apply final processing
         self.post_init()
@@ -1071,9 +1069,6 @@ class LSGCamembertForMaskedLM(LSGCamembertPreTrainedModel, CamembertForMaskedLM)
 
         self.roberta = LSGCamembertModel(config, add_pooling_layer=False)
         self.lm_head = CamembertLMHead(config)
-        
-        # The LM head weights require special treatment only when they are tied with the word embeddings
-        self.update_keys_to_ignore(config, ["lm_head.decoder.weight"])
 
         # Initialize weights and apply final processing
         self.post_init()
