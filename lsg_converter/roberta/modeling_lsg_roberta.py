@@ -1041,9 +1041,6 @@ class LSGRobertaForCausalLM(LSGRobertaPreTrainedModel, RobertaForCausalLM):
         self.roberta = LSGRobertaModel(config, add_pooling_layer=False)
         self.lm_head = RobertaLMHead(config)
 
-        # The LM head weights require special treatment only when they are tied with the word embeddings
-        self.update_keys_to_ignore(config, ["lm_head.decoder.weight"])
-
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -1068,9 +1065,6 @@ class LSGRobertaForMaskedLM(LSGRobertaPreTrainedModel, RobertaForMaskedLM):
 
         self.roberta = LSGRobertaModel(config, add_pooling_layer=False)
         self.lm_head = RobertaLMHead(config)
-        
-        # The LM head weights require special treatment only when they are tied with the word embeddings
-        self.update_keys_to_ignore(config, ["lm_head.decoder.weight"])
 
         # Initialize weights and apply final processing
         self.post_init()
