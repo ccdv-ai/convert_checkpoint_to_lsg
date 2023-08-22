@@ -74,8 +74,11 @@ class BarthezConversionScript(ConversionScript):
             [position_embeddings_weights[self._DEFAULT_POSITIONAL_OFFSET:] for _ in range(max_pos//current_max_position + 1)], 
             dim=0)[:max_pos + self._DEFAULT_POSITIONAL_OFFSET]
 
-        #processed_module.encoder.embed_positions.position_ids = torch.arange(max_pos + 2, device=processed_module.encoder.embed_positions.position_ids.device).unsqueeze(0)
-        module_prefix.encoder.embed_positions.weight.data = new_position_embeddings_weights
+        module_prefix.encoder.embed_positions = nn.Embedding(
+            *new_position_embeddings_weights.size(), 
+            _weight=new_position_embeddings_weights,
+            dtype=new_position_embeddings_weights.dtype
+            )
 
         # Decoder
         position_embeddings_weights = module_prefix.decoder.embed_positions.weight.clone()
@@ -86,7 +89,11 @@ class BarthezConversionScript(ConversionScript):
             [position_embeddings_weights[self._DEFAULT_POSITIONAL_OFFSET:] for _ in range(max_pos//current_max_position + 1)], 
             dim=0)[:max_pos + self._DEFAULT_POSITIONAL_OFFSET]
 
-        module_prefix.decoder.embed_positions.weight.data = new_position_embeddings_weights
+        module_prefix.decoder.embed_positions = nn.Embedding(
+            *new_position_embeddings_weights.size(), 
+            _weight=new_position_embeddings_weights,
+            dtype=new_position_embeddings_weights.dtype
+            )
 
     def run_test(self):
         

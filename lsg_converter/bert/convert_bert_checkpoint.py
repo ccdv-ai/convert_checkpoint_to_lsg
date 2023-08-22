@@ -85,8 +85,11 @@ class BertConversionScript(ConversionScript):
             position_embeddings_weights for _ in range(max_pos//current_max_position + 1)
             ], dim=0)[:max_pos]
 
-        module_prefix.embeddings.position_ids = torch.arange(max_pos, device=module_prefix.embeddings.position_ids.device).unsqueeze(0)
-        module_prefix.embeddings.position_embeddings.weight.data = new_position_embeddings_weights
+        module_prefix.embeddings.position_embeddings = nn.Embedding(
+            *new_position_embeddings_weights.size(), 
+            _weight=new_position_embeddings_weights,
+            dtype=new_position_embeddings_weights.dtype
+            )
 
     def run_test(self):
         

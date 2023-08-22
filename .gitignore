@@ -4,6 +4,7 @@ __pycache__/*
 .gitignore
 convert.sh
 convert_all_models.sh
+convert_all_models.py
 convert_single_model.sh
 replace_models.py
 test_memory.py

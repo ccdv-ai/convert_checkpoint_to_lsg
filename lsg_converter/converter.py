@@ -38,8 +38,7 @@ class LSGConverter():
         keep_first_global_token=False, 
         resize_lsg=False, 
         use_token_ids=True, 
-        use_auth_token=False,
-        seed=123,
+        seed=123
         ):
         """
         max_sequence_length (int): new max sequence length
@@ -48,7 +47,6 @@ class LSGConverter():
         keep_first_global_token (bool): keep or replace the first global token (<s> + pos 0)
         resize_lsg (bool): only resize an existing LSG model
         use_token_ids (bool): use token_type_ids to build global tokens
-        use_auth_token (bool): use HF auth token or not
         seed (int): seed
         """
         self.max_sequence_length = max_sequence_length
@@ -94,6 +92,7 @@ class LSGConverter():
                 save_model=False,
                 seed=self.seed
                 )
+            
             return converter.process()
 
 """

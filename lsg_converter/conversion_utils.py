@@ -58,6 +58,7 @@ class ConversionScript():
         (lsg_architecture, lsg_model), initial_architecture = self.get_architecture()
         is_base_architecture, is_lsg, keep_first_global = self.get_additional_params(lsg_architecture, initial_architecture)
         model, tokenizer = self.get_model(lsg_architecture, lsg_model)
+        is_training = model.training
         model, tokenizer = self.update_config(model, tokenizer)
 
         # Get the module prefix to update
@@ -81,8 +82,8 @@ class ConversionScript():
 
         if self.save_model:
             self.save(model, tokenizer)
-
-        return model, tokenizer
+        
+        return model.train() if is_training else model.eval(), tokenizer
 
     def get_architecture(self):
         if self.architecture is not None:
