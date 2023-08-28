@@ -195,6 +195,7 @@ class ConversionScript():
         tokenizer = AutoTokenizer.from_pretrained(lsg_path)
         
         long_text = text * 200
+        dtype = torch.bfloat16
 
         for name in auto_map.keys():
 
@@ -203,22 +204,22 @@ class ConversionScript():
 
             model = getattr(sys.modules["transformers"], name)
             print("\n\n" + "="*5 + " " + name + " " + "="*5 + "\n")
-            model = model.from_pretrained(lsg_path, trust_remote_code=True, is_decoder="Causal" in name).train()
+            model = model.from_pretrained(lsg_path, trust_remote_code=True, is_decoder="Causal" in name, torch_dtype=dtype).train()
             
             if gradient_checkpointing:
                 model.gradient_checkpointing_enable()
 
             if "QuestionAnswering" in name:
                 tokens = tokenizer("context", long_text, return_tensors="pt", truncation=True)
-                inputs_embeds = torch.randn(1, max_length, hidden_size)
+                inputs_embeds = torch.randn(1, max_length, hidden_size, dtype=dtype)
             elif "MultipleChoice" in name:
                 num_choices = 4
                 tokens = tokenizer([long_text]*num_choices, return_tensors="pt", truncation=True)
                 tokens = {k: v.reshape(1, num_choices, -1) for k, v in tokens.items()}
-                inputs_embeds = torch.randn(1, num_choices, max_length//4, hidden_size)
+                inputs_embeds = torch.randn(1, num_choices, max_length//4, hidden_size, dtype=dtype)
             else:
                 tokens = tokenizer(long_text, return_tensors="pt", truncation=True)
-                inputs_embeds = torch.randn(1, max_length, hidden_size)
+                inputs_embeds = torch.randn(1, max_length, hidden_size, dtype=dtype)
 
             if model.config.model_type != "pegasus":
                 model(**tokens)

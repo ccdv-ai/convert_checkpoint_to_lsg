@@ -766,7 +766,7 @@ class LSGTransformer(Transformer):
         return_dict: Optional[bool] = None,
     ) -> Union[BaseModelOutput, Tuple[torch.Tensor, ...]]:  # docstyle-ignore
 
-        attn_mask = attn_mask.float()
+        attn_mask = attn_mask.to(dtype=x.dtype)
         mask_value = 0
         n, t = attn_mask.size()
 
