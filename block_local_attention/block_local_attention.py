@@ -6,11 +6,13 @@ class BlockLocalSelfAttention(nn.Module):
 
     def __init__(self, block_size=128, compute_global_attention=True, is_causal=False, attention_dropout_prob=0.1):
         """
+        This is expected to replace the vanilla Self Attention mechanism
+
         Compute block local attention with an optional global connection
         If compute_global_attention==True, the first query is connected to all keys and values 
             and all the other queries are connected to the first key and value (usually BOS token)
-        This is expected to replace the vanilla Self Attention mechanism
-        WARNING: Causal is experimental
+        
+        WARNING: Causal is experimental especially for inference (cache)
         """
         super().__init__()
 
@@ -40,7 +42,7 @@ class BlockLocalSelfAttention(nn.Module):
         mask:    (batch, 1, 1, sequence_length)
         """
 
-        # Requires Q K and V to be of the same size
+        # Require Q K and V to be of the same size
         assert query_layer.size() == key_layer.size() == value_layer.size(), "Q, K, V have to be of the same size"
 
         n, h, t, d = query_layer.size()
@@ -54,10 +56,10 @@ class BlockLocalSelfAttention(nn.Module):
         if t <= 2*self.block_size:
             return self.attention_product(query_layer, key_layer, value_layer, attention_mask)
 
-        # Computes block local attention
+        # Compute block local attention
         outputs = self.block_local_forward(query_layer, key_layer, value_layer, attention_mask)
 
-        # Computes global attention
+        # Compute global attention
         if self.compute_global_attention and not self.is_causal:
             outputs[..., :1, :] = self.attention_product(
                 query_layer[..., :1, :], 
@@ -84,7 +86,7 @@ class BlockLocalSelfAttention(nn.Module):
         # (batch, num_heads, sequence_length, hidden_size)
         n, h, t, d = query_layer.size()
 
-        # Requires to have sequence_length % block_size == 0
+        # Require to have sequence_length % block_size == 0
         extra_tokens = t % self.block_size
 
         # If sequence_length % block_size != 0, we pad
@@ -100,7 +102,8 @@ class BlockLocalSelfAttention(nn.Module):
         # If we compute global attention, we add a connection to the first token
         # A query is connected to : previous block, current block, next block, first token
 
-        # We build inputs of size (batch, num_heads, num_blocks, block_size*3 (+1 if global), hidden_size)
+        # We build K, V of sizes (batch, num_heads, num_blocks, block_size*3 (+1 if global), hidden_size)
+        # We build the mask of size (batch, 1, num_blocks, 1, block_size*3 (+1 if global))
         key_layer = self.build_block_local_inputs(
             key_layer, 
             )
@@ -202,6 +205,7 @@ class BlockLocalSelfAttention(nn.Module):
 
         # If we compute global attention, we add a connection to the first token 
         # A query is connected to : previous block, current block, next block, (first token)
+        # Thus we split our sequences into overlapping blocks of size block_size*3 (+1)
         if self.compute_global_attention:
             if is_attn_mask:
                 # We build the global mask
@@ -229,9 +233,8 @@ class BlockLocalSelfAttention(nn.Module):
         size, step = self.local_shapes
         s = (size - step) // 2
 
-        # We need to pad before reshaping
-        # Because there is no block before the first one
-        # And no block after the last one
+        # For shape consistency, we need to pad before reshaping
+        # To get num_blocks of 3*block_size
         if is_attn_mask:
             pad_value = torch.finfo(inputs.dtype).min 
             inputs = inputs.transpose(-1, -2)
@@ -244,7 +247,7 @@ class BlockLocalSelfAttention(nn.Module):
             value=pad_value
             ).transpose(-1, -2)
 
-        # Build blocks
+        # Split into overlapping blocks
         inputs = inputs.unfold(-2, size=size, step=step).transpose(-1, -2)
 
         # Skip third block if causal
