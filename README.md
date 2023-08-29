@@ -15,7 +15,7 @@ pip install lsg-converter
 * [Efficiency](#efficiency)
 * [Conversion](#convert-checkpoint-to-lsg)
 * [Usage](#model-usage)
-* [Block-Local-Attention](#block-local-attention)
+* [Block-Local-Self-Attention](#block-local-self-attention)
 * [LSG-Attention](#lsg-attention)
 * [Experiments](#experiments)
 
@@ -132,12 +132,15 @@ inputs = tokenizer(SENTENCE, return_tensors="pt")
 model(**inputs)
 ```
 
-# Block-Local-Attention
+# Block-Local-Self-Attention
 
-For those who only want a vanilla Block-Local-Attention module, see `/block_local_attention`:
+For those who want a very simple Block-Local-Self-Attention layer (no sparse connection, unique global token), see `lsg_converter/attention_layers. \
+Doesn't work for Cross Attention because the local context is ambiguous to define in this case. 
+
+Usage:
 
 ```python
-from block_local_attention import *
+from lsg_converter.attention_layers import BlockLocalSelfAttention
 
 # batch, num_heads, sequence length, hidden_size
 n, h, t, d = 2, 4, 58, 32  
@@ -147,14 +150,32 @@ attention_mask = torch.zeros(n, 1, 1, t).float()
 
 attn = BlockLocalSelfAttention(block_size=16, compute_global_attention=True, is_causal=False, attention_dropout_prob=0.1)
 
-# expect (n, h, t, d) inputs,
-# attention_mask is (n, 1, 1, t) or (n, 1, t, t) for causal
-# attention_mask is 0 for no mask, -inf for mask (similar to most HuggingFace models)
+# expect (batch, num_heads, sequence_length, hidden_size) inputs,
+# attention_mask is (batch, 1, 1, sequence_length) 
+# causal mask is built on the fly but (batch, 1, sequence_length, sequence_length) mask is possible
 outputs = attn(Q, K, V, attention_mask)
 
 print(outputs.shape)
 > torch.Size([2, 4, 58, 32])
 ```
+
+Example: replacing Self Attention in GPT2 (from Huggingface):
+```python
+from transformers.models.gpt2 import * 
+from lsg_converter.attention_layers import BlockLocalSelfAttention
+
+class GPT2BlockLocalAttention(modeling_gpt2.GPT2Attention):
+    def __init__(self, config, is_cross_attention=False, layer_idx=None):
+        super().__init__(config, is_cross_attention, layer_idx)
+        self.attn = BlockLocalSelfAttention(block_size=32, compute_global_attention=True, is_causal=True)
+
+    def _attn(self, query, key, value, attention_mask=None, head_mask=None):
+        return self.attn(query, key, value, attention_mask), None
+    
+modeling_gpt2.GPT2Attention = GPT2BlockLocalAttention
+```
+Note that for generation (inference on causal modeling), full attention is used after the first step. \
+This may change in the future.
 
 # LSG Attention
 
