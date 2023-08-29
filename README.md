@@ -134,7 +134,7 @@ model(**inputs)
 
 # Block-Local-Self-Attention
 
-For those who want a very simple Block-Local-Self-Attention layer (no sparse connection, unique global token), see `lsg_converter/attention_layers. \
+For those who want a very simple Block-Local-Self-Attention layer (no sparse connection, unique global token), see `lsg_converter/attention_layers`. \
 Doesn't work for Cross Attention because the local context is ambiguous to define in this case. 
 
 Usage:

@@ -1,4 +1,4 @@
-# Block-Local-Attention
+# Block-Local-Self-Attention
 This is a substitute of vanilla Self Attention (bidirectionnal or causal). \
 Doesn't work for Cross Attention because the local context is ambiguous to define in this case. 
 
@@ -35,7 +35,6 @@ print(outputs.shape)
 > torch.Size([2, 4, 58, 32])
 ```
 
-You can replace Vanilla Attention but this efficient variant. \
 Replacing Self Attention in GPT2 (from Huggingface):
 ```python
 from transformers.models.gpt2 import * 
