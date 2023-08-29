@@ -11,6 +11,7 @@ test_memory.py
 lsg_converter/*/__pycache__
 block_local_attention/test_block_local.py
 block_local_attention/test_raw_block_local.py
+block_local_attention/generation_pipeline.py
 lsg_converter.egg-info/*
 dist
 update_package.sh

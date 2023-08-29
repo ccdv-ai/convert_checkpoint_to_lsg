@@ -7,12 +7,13 @@ class BlockLocalSelfAttention(nn.Module):
     def __init__(self, block_size=128, compute_global_attention=True, is_causal=False, attention_dropout_prob=0.1):
         """
         This is expected to replace the vanilla Self Attention mechanism
+        Should be compatible with flash-attention with various reshapes
 
         Compute block local attention with an optional global connection
         If compute_global_attention==True, the first query is connected to all keys and values 
             and all the other queries are connected to the first key and value (usually BOS token)
         
-        WARNING: Causal is experimental especially for inference (cache)
+        WARNING: Causal is experimental especially for inference (we use full attention for generation)
         """
         super().__init__()
 
@@ -23,7 +24,6 @@ class BlockLocalSelfAttention(nn.Module):
 
         # Shape of blocks
         self.local_shapes = (self.block_size*3, self.block_size)
-
         
         if is_causal:
             self.attention = self.causal_attention_product
@@ -42,18 +42,35 @@ class BlockLocalSelfAttention(nn.Module):
         mask:    (batch, 1, 1, sequence_length)
         """
 
+        n, h, t, d = query_layer.size()
+
+        # Check if we are generating
+        if self.is_causal and not self.training:
+            if t != key_layer.size()[-2]:
+                # Should use the mask to extract the last 2*self.block_size tokens of each sequence for batch processing
+                # But its a lot easier to compute full attention during generation instead 
+                # Block causal attention is only used during the first step where query.size() == key.size()
+                return self.attention_product_for_generation(query_layer, key_layer, value_layer, attention_mask)
+                
         # Require Q K and V to be of the same size
         assert query_layer.size() == key_layer.size() == value_layer.size(), "Q, K, V have to be of the same size"
-
-        n, h, t, d = query_layer.size()
 
         # Create mask if there is none
         # attention_mask: (batch, 1, 1, sequence_length)  (-inf for mask, 0 else)
         if attention_mask is None:
             attention_mask = torch.zeros(n, 1, 1, t, device=query_layer.device, dtype=query_layer.dtype)
 
-        # If sequence is shorter than 2 blocks -> returns vanille self attention
+        # If sequence is shorter than 2 blocks -> return vanilla self attention
         if t <= 2*self.block_size:
+            if self.is_causal:
+                return self.causal_attention_product(
+                    query_layer, 
+                    key_layer, 
+                    value_layer, 
+                    attention_mask, 
+                    causal_shape=(t, t), 
+                    is_block_causal=False
+                    )
             return self.attention_product(query_layer, key_layer, value_layer, attention_mask)
 
         # Compute block local attention
@@ -86,24 +103,19 @@ class BlockLocalSelfAttention(nn.Module):
         # (batch, num_heads, sequence_length, hidden_size)
         n, h, t, d = query_layer.size()
 
-        # Require to have sequence_length % block_size == 0
+        # We need sequence_length % block_size == 0 to build blocks
         extra_tokens = t % self.block_size
 
         # If sequence_length % block_size != 0, we pad
         if extra_tokens > 0:
-            pad = (0, self.block_size - extra_tokens)
-            query_layer = self.pad_inputs(query_layer.transpose(-1, -2), pad=pad).transpose(-1, -2)
-            key_layer = self.pad_inputs(key_layer.transpose(-1, -2), pad=pad).transpose(-1, -2)
-            value_layer = self.pad_inputs(value_layer.transpose(-1, -2), pad=pad).transpose(-1, -2)
-
-            pad = (self.block_size - extra_tokens, self.block_size - extra_tokens) if self.is_causal else pad
-            attention_mask = self.pad_inputs(attention_mask, pad=pad, value=torch.finfo(attention_mask.dtype).min)
+            query_layer = self.pad_inputs(query_layer, pad=(0, self.block_size - extra_tokens))
+            # We pad keys, values and mask when we build block_local_inputs
 
         # If we compute global attention, we add a connection to the first token
-        # A query is connected to : previous block, current block, next block, first token
+        # A query is then connected to : previous block, current block, next block, first token
 
-        # We build K, V of sizes (batch, num_heads, num_blocks, block_size*3 (+1 if global), hidden_size)
-        # We build the mask of size (batch, 1, num_blocks, 1, block_size*3 (+1 if global))
+        # We build K, V of sizes: (batch, num_heads, num_blocks, block_size*3 (+1 if global), hidden_size)
+        # We build the mask of size: (batch, 1, num_blocks, 1, block_size*3 (+1 if global))
         key_layer = self.build_block_local_inputs(
             key_layer, 
             )
@@ -117,7 +129,7 @@ class BlockLocalSelfAttention(nn.Module):
             is_attn_mask=True
             ).transpose(-1, -2)
 
-        # Expects (..., t, d) shape
+        # Expect (..., t, d) shapes
         # Simple dot product attention between: 
         #   Q:      (batch, num_heads, num_blocks, block_size,        hidden_size)
         #   K, V:   (batch, num_heads, num_blocks, block_size*3 (+1), hidden_size)
@@ -131,6 +143,13 @@ class BlockLocalSelfAttention(nn.Module):
         
         # We reshape and cut the sequence if we padded
         return context_layer.reshape(n, h, -1, d)[..., :t, :]
+    
+    def attention_product_for_generation(self, query_layer, key_layer, value_layer, attention_mask):
+        # Should use the mask to extract the last 2*self.block_size tokens of each sequence for batch processing
+        # But its a lot easier to compute full attention during generation instead 
+        # May have a slight impact on generation
+        # Can be easy to fix for batch_size = 1 since there is no padding in keys and values
+        return self.attention_product(query_layer, key_layer, value_layer, attention_mask)
     
     def attention_product(self, query_layer, key_layer, value_layer, attention_mask=None):
         
@@ -155,7 +174,7 @@ class BlockLocalSelfAttention(nn.Module):
 
         return context_layer
 
-    def causal_attention_product(self, query_layer, key_layer, value_layer, attention_mask=None, causal_shape=None):
+    def causal_attention_product(self, query_layer, key_layer, value_layer, attention_mask=None, causal_shape=None, is_block_causal=True):
         
         d = query_layer.shape[-1]
 
@@ -167,24 +186,11 @@ class BlockLocalSelfAttention(nn.Module):
 
         # Add causal mask
         causal_shape = (self.block_size, self.block_size) if causal_shape is None else causal_shape
-        causal_mask = torch.tril(
-            torch.ones(*causal_shape, device=attention_mask.device, dtype=attention_scores.dtype), 
-            diagonal=-1
-            ) 
-        
-        dtype_min = torch.tensor(
-                    torch.finfo(attention_scores.dtype).min, device=attention_scores.device, dtype=attention_scores.dtype
-                )
-
-        causal_mask = self.pad_inputs(causal_mask.T * dtype_min, (attention_mask.size()[-1] - self.block_size, 0), value=0)
-
-        attention_mask = attention_mask[..., -1:, :] + causal_mask.unsqueeze(0).unsqueeze(0).unsqueeze(0)
-        attention_mask = torch.max(attention_mask, dtype_min)
+        attention_mask = self.build_causal_mask(attention_mask, causal_shape, is_block_causal)
 
         attention_scores = attention_scores + attention_mask
 
         del attention_mask
-        del causal_mask
 
         # Normalize the attention scores to probabilities.
         attention_probs = nn.Softmax(dim=-1)(attention_scores)
@@ -208,10 +214,10 @@ class BlockLocalSelfAttention(nn.Module):
         # Thus we split our sequences into overlapping blocks of size block_size*3 (+1)
         if self.compute_global_attention:
             if is_attn_mask:
-                # We build the global mask
+                # We build the global mask: (batch, 1, 1, 1)
                 global_inputs = torch.zeros(inputs.size()[0], 1, 1, 1, device=inputs.device, dtype=inputs.dtype)
                 # We need to avoid a double connection to the first token in the first block
-                # For this we mask the first token
+                # For this we mask the first token (-inf)
                 inputs[..., 0] = torch.finfo(inputs.dtype).min 
             else:
                 # We extract the global key or value (first token)
@@ -225,11 +231,38 @@ class BlockLocalSelfAttention(nn.Module):
         # Else returns (batch, num_heads, num_blocks, block_size*3, hidden_size)
         return self.reshape_to_block_local(inputs, is_attn_mask)
 
-    def pad_inputs(self, inputs, pad, value=0):
+    def build_causal_mask(self, attention_mask, causal_shape, is_block_causal):
+        dtype_min = torch.tensor(
+                        torch.finfo(attention_mask.dtype).min, device=attention_mask.device, dtype=attention_mask.dtype
+                    )
+        
+        # Triangular mask
+        causal_mask = torch.ones(*causal_shape, device=attention_mask.device, dtype=attention_mask.dtype)
+        causal_mask = torch.tril(causal_mask, diagonal=-1).T
+        
+        if is_block_causal:
+            causal_mask = self.pad_inputs(
+                inputs=causal_mask * dtype_min, 
+                pad=(attention_mask.size()[-1] - self.block_size, 0), 
+                value=0, 
+                is_attn_mask=True
+                )
+            attention_mask = attention_mask[..., -1:, :] + causal_mask[None, None, None, :, :]
+        else:
+            attention_mask = attention_mask + (causal_mask * dtype_min)[None, None, :, :] 
+
+        attention_mask = torch.max(attention_mask, dtype_min)
+        return attention_mask
+
+    def pad_inputs(self, inputs, pad, value=0, is_attn_mask=False):
+        if not is_attn_mask:
+            return torch.nn.functional.pad(inputs.transpose(-1, -2), pad=pad, value=value).transpose(-1, -2)
         return torch.nn.functional.pad(inputs, pad=pad, value=value)
 
     def reshape_to_block_local(self, inputs, is_attn_mask=False):
         
+        n, h, t, d = inputs.size()
+        extra_tokens = t % self.block_size
         size, step = self.local_shapes
         s = (size - step) // 2
 
@@ -243,7 +276,7 @@ class BlockLocalSelfAttention(nn.Module):
 
         inputs = torch.nn.functional.pad(
             inputs.transpose(-1, -2), 
-            pad=(s, s),
+            pad=(s, s + self.block_size - extra_tokens),
             value=pad_value
             ).transpose(-1, -2)
 
@@ -273,4 +306,3 @@ class BlockLocalSelfAttention(nn.Module):
         """
         t, d = inputs.size()[-2:]
         return inputs.reshape(*inputs.size()[:-2], t//self.block_size, -1, d)
-
