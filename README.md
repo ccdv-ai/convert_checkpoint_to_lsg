@@ -191,9 +191,14 @@ You can change various parameters like :
 * see config.json file
 
 ## Sparse selection type
-There are 5 different sparse selection patterns. The best type is task dependent. \
+There are 6 different sparse selection patterns. The best type is task dependent. \
 If `sparse_block_size=0` or `sparsity_type="none"`, only local attention is considered. \
 Note that for sequences with length < 2*block_size, the type has no effect.
+* `sparsity_type="bos_pooling"` (new)
+    * weighted average pooling using the BOS token 
+    * Works best in general, especially with a rather large sparsity_factor (8, 16, 32)
+    * Additional parameters:
+        * None
 * `sparsity_type="norm"`, select highest norm tokens
     * Works best for a small sparsity_factor (2 to 4)
     * Additional parameters:

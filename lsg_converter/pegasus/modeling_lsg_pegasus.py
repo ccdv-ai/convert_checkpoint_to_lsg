@@ -53,9 +53,9 @@ class LSGPegasusConfig(PegasusConfig):
         self.sparsity_factor = sparsity_factor
         self.sparsity_type = sparsity_type
 
-        if sparsity_type not in [None, "none", "norm", "lsh", "pooling", "stride", "block_stride"]:
+        if sparsity_type not in [None, "none", "norm", "lsh", "pooling", "stride", "block_stride", "bos_pooling"]:
             logger.warning(
-                "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride'], \
+                "[WARNING CONFIG]: sparsity_mode not in [None, 'none', 'norm', 'lsh', 'pooling', 'stride', 'block_stride', 'bos_pooling'], \
                     setting sparsity_type=None, computation will skip sparse attention")
             self.sparsity_type = None
 
@@ -343,7 +343,7 @@ class LSGAttentionProduct(nn.Module):
         return x.reshape(*x.size()[:-2], n_blocks, -1, d)
 
 
-class LSGPegasusEncoderAttention(BaseSelfAttention):
+class LSGPegasusEncoderSelfAttention(BaseSelfAttention):
     '''
     Compute local attention with overlapping blocs
     Use global attention for tokens with highest norm
@@ -378,15 +378,16 @@ class LSGPegasusEncoderAttention(BaseSelfAttention):
             "lsh": self.get_sparse_tokens_with_lsh,
             "stride": self.get_sparse_tokens_with_stride,
             "block_stride": self.get_sparse_tokens_with_block_stride,
+            "bos_pooling": self.get_sparse_tokens_with_bos_pooling
             }
         
         self.sparsity_type = config.sparsity_type
-        self.get_sparse_elements = sparse_functions.get(self.sparsity_type, lambda x, y, z: (None, None, None))
+        self.get_sparse_elements = sparse_functions.get(self.sparsity_type, lambda w, x, y, z: (None, None, None))
 
         if config.sparsity_type == "lsh":
             self.lsh_num_pre_rounds = config.lsh_num_pre_rounds
 
-    def get_sparse_tokens_with_norm(self, keys, values, mask):
+    def get_sparse_tokens_with_norm(self, queries, keys, values, mask):
         
         if self.sparsity_factor == 1:
             return keys, values, mask.expand(-1, keys.size()[1], -1, -1)
@@ -414,7 +415,7 @@ class LSGPegasusEncoderAttention(BaseSelfAttention):
 
         return keys, values, mask
 
-    def get_sparse_tokens_with_pooling(self, keys, values, mask):
+    def get_sparse_tokens_with_pooling(self, queries, keys, values, mask):
         
         if self.sparsity_factor == 1:
             return keys, values, mask.expand(-1, keys.size()[1], -1, -1)
@@ -437,7 +438,7 @@ class LSGPegasusEncoderAttention(BaseSelfAttention):
         mask *= torch.finfo(mask.dtype).min
         return keys.reshape(n, h, -1, d), values.reshape(n, h, -1, d), mask.expand(-1, h, -1, -1).transpose(-1, -2)
 
-    def get_sparse_tokens_with_stride(self, keys, values, mask):
+    def get_sparse_tokens_with_stride(self, queries, keys, values, mask):
 
         if self.sparsity_factor == 1:
             return keys, values, mask.expand(-1, keys.size()[1], -1, -1)
@@ -453,7 +454,7 @@ class LSGPegasusEncoderAttention(BaseSelfAttention):
 
         return keys, values, mask
 
-    def get_sparse_tokens_with_block_stride(self, keys, values, mask):
+    def get_sparse_tokens_with_block_stride(self, queries, keys, values, mask):
 
         if self.sparsity_factor == 1:
             return keys, values, mask.expand(-1, keys.size()[1], -1, -1)
@@ -473,11 +474,14 @@ class LSGPegasusEncoderAttention(BaseSelfAttention):
 
         return keys, values, mask
         
-    def get_sparse_tokens_with_lsh(self, keys, values, mask):
+    def get_sparse_tokens_with_lsh(self, queries, keys, values, mask):
         
         if self.sparsity_factor == 1:
             return keys, values, mask.expand(-1, keys.size()[1], -1, -1)
 
+        if self.sparsity_factor == self.sparse_block_size:
+            return self.get_sparse_tokens_with_bos_pooling(queries, keys, values, mask)
+        
         block_size = min(self.block_size, self.sparse_block_size)
         keys = self.chunk(keys, block_size)
         values = self.chunk(values, block_size)
@@ -525,6 +529,29 @@ class LSGPegasusEncoderAttention(BaseSelfAttention):
 
         return keys[..., :output_size, :], values[..., :output_size, :], mask[..., :output_size, :]
 
+    def get_sparse_tokens_with_bos_pooling(self, queries, keys, values, mask):
+        
+        if self.sparsity_factor == 1:
+            return keys, values, mask.expand(-1, keys.size()[1], -1, -1)
+
+        queries = queries.unsqueeze(-3)
+        mask = self.chunk(mask.transpose(-1, -2), self.sparsity_factor).transpose(-1, -2)
+        keys = self.chunk(keys, self.sparsity_factor)
+        values = self.chunk(values, self.sparsity_factor)
+        
+        n, h, b, t, d = keys.size()
+        scores = (queries[..., :1, :] @ keys.transpose(-1, -2)) / math.sqrt(d)
+        if mask is not None:
+            scores = scores + mask
+
+        scores = torch.softmax(scores, dim=-1)
+        keys = scores @ keys 
+        values = scores @ values
+        mask = mask.mean(dim=-1)
+        mask[mask != torch.finfo(mask.dtype).min] = 0
+        
+        return keys.reshape(n, h, -1, d), values.reshape(n, h, -1, d), mask.expand(-1, h, -1, -1).transpose(-1, -2)
+    
     def forward(
         self,
         hidden_states,
@@ -594,7 +621,7 @@ class LSGPegasusEncoderAttention(BaseSelfAttention):
         sparse_key, sparse_value, sparse_mask = (None, None, None)
 
         if self.sparse_block_size and self.sparsity_factor > 0:
-            sparse_key, sparse_value, sparse_mask = self.get_sparse_elements(key_layer, value_layer, attention_mask)
+            sparse_key, sparse_value, sparse_mask = self.get_sparse_elements(query_layer, key_layer, value_layer, attention_mask)
         
         # Expand masks on heads
         attention_mask = attention_mask.expand(-1, h, -1, -1)
@@ -667,7 +694,7 @@ class LSGPegasusEncoderLayer(PegasusEncoderLayer):
     def __init__(self, config: LSGPegasusConfig):
 
         super().__init__(config)
-        self.self_attn = LSGPegasusEncoderAttention(
+        self.self_attn = LSGPegasusEncoderSelfAttention(
             config=config,
             embed_dim=self.embed_dim,
             num_heads=config.encoder_attention_heads,

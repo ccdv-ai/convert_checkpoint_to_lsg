@@ -4,10 +4,10 @@ import math
 
 class BlockLocalSelfAttention(nn.Module):
 
-    def __init__(self, block_size=128, compute_global_attention=True, is_causal=False, attention_dropout_prob=0.1):
+    def __init__(self, config=None, block_size=128, compute_global_attention=True, is_causal=False, attention_dropout_prob=0.1, preprocessing_function=None):
         """
-        This is expected to replace the vanilla Self Attention mechanism
-        Should be compatible with flash-attention with various reshapes
+        This is a substitute of vanilla Self Attention (bidirectionnal or causal)
+        Doesn't work for Cross Attention because the local context is ambiguous to define in this case
 
         Compute block local attention with an optional global connection
         If compute_global_attention==True, the first query is connected to all keys and values 
@@ -17,10 +17,12 @@ class BlockLocalSelfAttention(nn.Module):
         """
         super().__init__()
 
+        self.config = config
         self.compute_global_attention = compute_global_attention
         self.block_size = block_size
         self.is_causal = is_causal
         self.dropout = nn.Dropout(attention_dropout_prob)
+        self.preprocess = preprocessing_function if preprocessing_function is not None else self.preprocess
 
         # Shape of blocks
         self.local_shapes = (self.block_size*3, self.block_size)
@@ -29,19 +31,37 @@ class BlockLocalSelfAttention(nn.Module):
             self.attention = self.causal_attention_product
         else:
             self.attention = self.attention_product
-        
+
+        self.post_init()
+
+    def post_init(self):
+        pass 
+    
+    def preprocess(self, query_layer, key_layer, value_layer, attention_mask, **kwargs):
+        return query_layer, key_layer, value_layer, attention_mask
+    
     def forward(
         self, 
         query_layer, 
         key_layer, 
         value_layer, 
         attention_mask=None, 
+        **kwargs
         ):
         """
         Q, K, V: (batch, num_heads, sequence_length, hidden_size)
         mask:    (batch, 1, 1, sequence_length)
         """
 
+        # Preprocessing function (default: do nothing)
+        query_layer, key_layer, value_layer, attention_mask = self.preprocess(
+                query_layer, 
+                key_layer, 
+                value_layer, 
+                attention_mask, 
+                **kwargs
+                )
+            
         n, h, t, d = query_layer.size()
 
         # Check if we are generating

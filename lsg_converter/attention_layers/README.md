@@ -2,16 +2,9 @@
 This is a substitute of vanilla Self Attention (bidirectionnal or causal). \
 Doesn't work for Cross Attention because the local context is ambiguous to define in this case. 
 
-## Parameters
-* `block_size` (default 128): size of the local block (3*block_size for non causal)
-* `compute_global_attention` (default True): add a global connection to the first token
-* `is_causal` (default False): for causal modeling
-* `attention_dropout_prob` (default 0.1): attention dropout
-
+## Usage
 In causal modeling, each query is connected up to `2*block_size` keys (+ global). \
 In non causal modeling, each query is connected up to `3*block_size` keys (+ global).
-
-## Usage
 
 ```python
 from lsg_converter.attention_layers import BlockLocalSelfAttention
@@ -52,3 +45,27 @@ modeling_gpt2.GPT2Attention = GPT2BlockLocalAttention
 ```
 Note that for generation (inference on causal modeling), full attention is used after the first step. \
 This may change in the future.
+
+## Parameters
+* `config` (default None): a configuration, not used by default
+* `block_size` (default 128): size of the local block
+* `compute_global_attention` (default True): add a global connection to the first token
+* `is_causal` (default False): for causal modeling
+* `attention_dropout_prob` (default 0.1): attention dropout
+* `preprocessing_function` (default None): replaces the `.preprocess(...)` method (i.e reshaping Q, K, V, mask etc...) \
+    * `arguments`: all the .forward(...) arguments `(query_layer, key_layer, value_layer, attention_mask, **kwargs)` \
+    * `returns`: must return `(query_layer, key_layer, value_layer, attention_mask)`
+
+## Methods for customization
+* `.post_init()` which is run at the end of `__init__(...)`
+* `.preprocess(query_layer, key_layer, value_layer, attention_mask, **kwargs)` that behaves like `preprocessing_function`
+
+## Inputs and outputs
+The `.forward(...)` methods at least 4 arguments which are passed to the `.preprocess(...)` methods:
+* `query_layer`: usually a `torch.tensor` of shape `(batch, num_heads, sequence_length, hidden_size)`
+* `key_layer`: usually a `torch.tensor` of shape `(batch, num_heads, sequence_length, hidden_size)`
+* `value_layer`: usually a `torch.tensor` of shape `(batch, num_heads, sequence_length, hidden_size)`
+* `attention_mask`: usually a `torch.tensor` of shape `(batch, 1, 1, sequence_length)` where `0` is non mask and `-inf` is mask
+* `**kwargs**`: additional arguments
+
+The output is a `torch.tensor` with the same shape as `query_layer`

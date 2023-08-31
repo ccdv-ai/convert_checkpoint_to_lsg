@@ -17,4 +17,5 @@ dist
 update_package.sh
 llama_test/*
 output_test/*
+test_new_features/*
 test_flash_attn.py
