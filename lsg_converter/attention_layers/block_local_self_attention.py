@@ -26,11 +26,6 @@ class BlockLocalSelfAttention(nn.Module):
 
         # Shape of blocks
         self.local_shapes = (self.block_size*3, self.block_size)
-        
-        if is_causal:
-            self.attention = self.causal_attention_product
-        else:
-            self.attention = self.attention_product
 
         self.post_init()
 
@@ -83,15 +78,12 @@ class BlockLocalSelfAttention(nn.Module):
         # If sequence is shorter than 2 blocks -> return vanilla self attention
         if t <= 2*self.block_size:
             if self.is_causal:
-                return self.causal_attention_product(
-                    query_layer, 
-                    key_layer, 
-                    value_layer, 
-                    attention_mask, 
-                    causal_shape=(t, t), 
-                    is_block_causal=False
-                    )
-            return self.attention_product(query_layer, key_layer, value_layer, attention_mask)
+                attention_mask = self.build_causal_mask(attention_mask, causal_shape=(t, t))
+            return self.attention_product(
+                query_layer=query_layer, 
+                key_layer=key_layer, 
+                value_layer=value_layer, 
+                attention_mask=attention_mask)
 
         # Compute block local attention
         outputs = self.block_local_forward(query_layer, key_layer, value_layer, attention_mask)
@@ -145,12 +137,21 @@ class BlockLocalSelfAttention(nn.Module):
             is_attn_mask=True
             ).transpose(-1, -2)
 
+        
+        # Prepare causal_mask for dot product
+        if self.is_causal:
+            attention_mask = self.build_causal_mask(
+                attention_mask, 
+                causal_shape=(self.block_size, self.block_size), 
+                is_block_causal=True
+                )
+
         # Expect (..., t, d) shapes
         # Simple dot product attention between: 
         #   Q:      (batch, num_heads, num_blocks, block_size,        hidden_size)
         #   K, V:   (batch, num_heads, num_blocks, block_size*3 (+1), hidden_size)
         #   Mask:   (batch, 1,         num_blocks, 1,                 block_size*3 (+1))
-        context_layer = self.attention(
+        context_layer = self.attention_product(
                 query_layer=self.chunk_to_blocks(query_layer), 
                 key_layer=key_layer,
                 value_layer=value_layer,
@@ -190,34 +191,7 @@ class BlockLocalSelfAttention(nn.Module):
 
         return context_layer
 
-    def causal_attention_product(self, query_layer, key_layer, value_layer, attention_mask=None, causal_shape=None, is_block_causal=True):
-        
-        d = query_layer.shape[-1]
-
-        # Take the dot product between "query" and "key" to get the raw attention scores.
-        attention_scores = query_layer @ key_layer.transpose(-1, -2) / math.sqrt(d)
-
-        del query_layer
-        del key_layer
-
-        # Add causal mask
-        causal_shape = (self.block_size, self.block_size) if causal_shape is None else causal_shape
-        attention_mask = self.build_causal_mask(attention_mask, causal_shape, is_block_causal)
-
-        attention_scores = attention_scores + attention_mask
-
-        del attention_mask
-
-        # Normalize the attention scores to probabilities.
-        attention_probs = nn.Softmax(dim=-1)(attention_scores)
-
-        # This is actually dropping out entire tokens to attend to, which might
-        # seem a bit unusual, but is taken from the original Transformer paper.
-        context_layer = self.dropout(attention_probs) @ value_layer
-
-        return context_layer
-
-    def build_causal_mask(self, attention_mask, causal_shape, is_block_causal):
+    def build_causal_mask(self, attention_mask, causal_shape, is_block_causal=False):
         dtype_min = torch.tensor(
                         torch.finfo(attention_mask.dtype).min, device=attention_mask.device, dtype=attention_mask.dtype
                     )
@@ -274,6 +248,8 @@ class BlockLocalSelfAttention(nn.Module):
         
         n, h, t, d = inputs.size()
         extra_tokens = t % self.block_size
+        offset = self.block_size - extra_tokens if extra_tokens > 0 else 0
+
         size, step = self.local_shapes
         s = (size - step) // 2
 
@@ -281,7 +257,7 @@ class BlockLocalSelfAttention(nn.Module):
         # To get num_blocks of 3*block_size
         inputs = self.pad_inputs(
             inputs, 
-            pad=(s, s + self.block_size - extra_tokens),
+            pad=(s, s + offset),
             value=pad_value,
             )
 
@@ -316,3 +292,4 @@ class BlockLocalSelfAttention(nn.Module):
         if not is_attn_mask:
             return torch.nn.functional.pad(inputs.transpose(-1, -2), pad=pad, value=value).transpose(-1, -2)
         return torch.nn.functional.pad(inputs, pad=pad, value=value)
+    
