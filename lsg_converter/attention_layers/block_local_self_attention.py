@@ -74,7 +74,7 @@ class BlockLocalSelfAttention(nn.Module):
         # attention_mask: (batch, 1, 1, sequence_length)  (-inf for mask, 0 else)
         if attention_mask is None:
             attention_mask = torch.zeros(n, 1, 1, t, device=query_layer.device, dtype=query_layer.dtype)
-
+        
         # If sequence is shorter than 2 blocks -> return vanilla self attention
         if t <= 2*self.block_size:
             if self.is_causal:
@@ -84,7 +84,7 @@ class BlockLocalSelfAttention(nn.Module):
                 key_layer=key_layer, 
                 value_layer=value_layer, 
                 attention_mask=attention_mask)
-
+        
         # Compute block local attention
         outputs = self.block_local_forward(query_layer, key_layer, value_layer, attention_mask)
 
@@ -137,7 +137,6 @@ class BlockLocalSelfAttention(nn.Module):
             is_attn_mask=True
             ).transpose(-1, -2)
 
-        
         # Prepare causal_mask for dot product
         if self.is_causal:
             attention_mask = self.build_causal_mask(
@@ -221,6 +220,7 @@ class BlockLocalSelfAttention(nn.Module):
         to
             (batch, num_heads, num_blocks, block_size*3 (+1), hidden_size)
         """
+        n, h, t, d = inputs.size()
 
         # Set a padding_value
         pad_value = torch.finfo(inputs.dtype).min if is_attn_mask else 0
@@ -230,11 +230,13 @@ class BlockLocalSelfAttention(nn.Module):
         # Thus we split our sequences into overlapping blocks of size block_size*3 (+1)
         if self.compute_global_attention:
             # We extract the global key, value, mask (first token)
-            global_inputs = inputs[..., :1, :]
             if is_attn_mask:
                 # We need to avoid a double connection to the first token in the first block
                 # For this we mask the first token (-inf) (NOTE: attn_mask is transposed)
                 inputs[..., 0, :] = pad_value 
+                global_inputs = torch.zeros(n, 1, 1, 1, device=inputs.device, dtype=inputs.dtype)
+            else:
+                global_inputs = inputs[..., :1, :].clone()
 
             # Return (batch, num_heads, num_blocks, block_size*3 + 1, hidden_size)
             return self.concat_global_and_local_tokens(
@@ -285,8 +287,8 @@ class BlockLocalSelfAttention(nn.Module):
         to
             (batch, num_heads, sequence_length//block_size, block_size, hidden_size)
         """
-        t, d = inputs.size()[-2:]
-        return inputs.reshape(*inputs.size()[:-2], t//self.block_size, -1, d)
+        n, h, t, d = inputs.size()
+        return inputs.reshape(n, h, t//self.block_size, -1, d)
 
     def pad_inputs(self, inputs, pad, value=0, is_attn_mask=False):
         if not is_attn_mask:
