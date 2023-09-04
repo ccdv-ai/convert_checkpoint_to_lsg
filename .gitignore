@@ -12,6 +12,7 @@ lsg_converter/*/__pycache__
 lsg_converter/attention_layers/test_block_local.py
 lsg_converter/attention_layers/test_raw_block_local.py
 lsg_converter/attention_layers/generation_pipeline.py
+lsg_converter/attention_layers/generation_pipeline2.py
 lsg_converter/attention_layers/classification_pipeline.py
 lsg_converter.egg-info/*
 dist

@@ -58,6 +58,7 @@ class BlockLocalSelfAttention(nn.Module):
                 )
             
         n, h, t, d = query_layer.size()
+        is_causal_mask = False
 
         # Check if we are generating
         if self.is_causal and not self.training:
@@ -74,10 +75,13 @@ class BlockLocalSelfAttention(nn.Module):
         # attention_mask: (batch, 1, 1, sequence_length)  (-inf for mask, 0 else)
         if attention_mask is None:
             attention_mask = torch.zeros(n, 1, 1, t, device=query_layer.device, dtype=query_layer.dtype)
-        
+        else:
+            assert len(attention_mask.size()) == 4, "Mask must have 4 dimensions, i.e (batch, 1, 1, sequence_length)"
+            is_causal_mask = (attention_mask.size()[-2] == t and self.is_causal)
+
         # If sequence is shorter than 2 blocks -> return vanilla self attention
         if t <= 2*self.block_size:
-            if self.is_causal:
+            if not is_causal_mask and self.is_causal:
                 attention_mask = self.build_causal_mask(attention_mask, causal_shape=(t, t))
             return self.attention_product(
                 query_layer=query_layer, 
@@ -85,6 +89,10 @@ class BlockLocalSelfAttention(nn.Module):
                 value_layer=value_layer, 
                 attention_mask=attention_mask)
         
+        # If mask is (batch, 1, seq_length, seq_length), extract the last row
+        if is_causal_mask:
+            attention_mask = attention_mask[..., -1:, :]
+
         # Compute block local attention
         outputs = self.block_local_forward(query_layer, key_layer, value_layer, attention_mask)
 
