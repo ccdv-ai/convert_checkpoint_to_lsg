@@ -15,6 +15,9 @@ on:
 permissions:
   contents: read
 
+env:
+  PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+  
 jobs:
   deploy:
 
