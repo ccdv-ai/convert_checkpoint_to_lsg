@@ -1,1 +1,1 @@
-from .block_local_self_attention import *
+from .lsg_self_attention import *

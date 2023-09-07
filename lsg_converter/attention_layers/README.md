@@ -1,23 +1,30 @@
-# Block-Local-Self-Attention
+# LSG-Self-Attention
 This is a substitute of vanilla Self Attention (bidirectionnal or causal). \
+There are two layers available:
+* `BlockLocalSelfAttention` (doesnt rely on sparse connections)
+* `LSGSelfAttention` (can use sparse connections)
+
 Doesn't work for Cross Attention because the local context is ambiguous to define in this case. 
 
 ## Usage
-In causal modeling, each query is connected up to `2*block_size` keys (+ global). \
-In non causal modeling, each query is connected up to `3*block_size` keys (+ global).
+In causal modeling, each query is connected up to `2*block_size` local keys, `block_size` sparse keys (+ global). \
+In non causal modeling, each query is connected up to `3*block_size` local keys, `2*block_size` sparse keys (+ global).
 
 ```python
-from lsg_converter.attention_layers import BlockLocalSelfAttention
+import torch
+from lsg_converter.attention_layers import BlockLocalSelfAttention, LSGSelfAttention
 
-# batch, num_heads, sequence_length, hidden_size
+# batch, num_heads, sequence length, hidden_size
 n, h, t, d = 2, 4, 58, 32  
 
 Q, K, V = torch.randn(n, h, t, d), torch.randn(n, h, t, d), torch.randn(n, h, t, d)
-
-# attention_mask is 0 for no mask, -inf for mask (similar to most HuggingFace models)
 attention_mask = torch.zeros(n, 1, 1, t).float()
 
+# Only block local attention with 1 global connection
 attn = BlockLocalSelfAttention(block_size=16, compute_global_attention=True, is_causal=False, attention_dropout_prob=0.1)
+
+# LSG attention with 1 global connection
+attn = LSGSelfAttention(block_size=32, sparsity_factor=8, sparsity_type="bos_pooling", compute_global_attention=True, is_causal=True)
 
 # expect (batch, num_heads, sequence_length, hidden_size) inputs,
 # attention_mask is (batch, 1, 1, sequence_length) 
@@ -28,7 +35,7 @@ print(outputs.shape)
 > torch.Size([2, 4, 58, 32])
 ```
 
-Replacing Self Attention in GPT2 (from Huggingface):
+Example: replacing Self Attention in GPT2 (from Huggingface):
 ```python
 from transformers.models.gpt2 import * 
 from lsg_converter.attention_layers import BlockLocalSelfAttention
@@ -55,6 +62,10 @@ This may change in the future.
 * `preprocessing_function` (default None): replaces the `.preprocess(...)` method (i.e reshaping Q, K, V, mask etc...) \
     * `arguments`: all the .forward(...) arguments `(query_layer, key_layer, value_layer, attention_mask, **kwargs)` \
     * `returns`: must return `(query_layer, key_layer, value_layer, attention_mask)`
+
+In `LSGSelfAttention`, you also have:
+* `sparsity_factor` (default 8): how sparse is sparse attention (about 1/8)
+* `sparsity_type` (default: `bos_pooling`): in [`"bos_pooling"`, `"pooling"`, `"norm"`, `"stride"`, `"block_stride"`]
 
 ## Methods for customization
 * `.post_init()` which is run at the end of `__init__(...)`

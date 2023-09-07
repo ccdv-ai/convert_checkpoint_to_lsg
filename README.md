@@ -15,7 +15,7 @@ pip install lsg-converter
 * [Efficiency](#efficiency)
 * [Conversion](#convert-checkpoint-to-lsg)
 * [Usage](#model-usage)
-* [Block-Local-Self-Attention](#block-local-self-attention)
+* [LSG-Self-Attention](#lsg-self-attention)
 * [LSG-Attention](#lsg-attention)
 * [Experiments](#experiments)
 
@@ -132,15 +132,16 @@ inputs = tokenizer(SENTENCE, return_tensors="pt")
 model(**inputs)
 ```
 
-# Block-Local-Self-Attention
+# LSG-Self-Attention
 
-For those who want a very simple Block-Local-Self-Attention layer (no sparse connection, unique global token), see `lsg_converter/attention_layers`. \
+You can find a self contained implementation of LSG attention (with no additional params), see `lsg_converter/attention_layers`. \
 Doesn't work for Cross Attention because the local context is ambiguous to define in this case. 
 
 Usage:
 
 ```python
-from lsg_converter.attention_layers import BlockLocalSelfAttention
+import torch
+from lsg_converter.attention_layers import BlockLocalSelfAttention, LSGSelfAttention
 
 # batch, num_heads, sequence length, hidden_size
 n, h, t, d = 2, 4, 58, 32  
@@ -148,7 +149,11 @@ n, h, t, d = 2, 4, 58, 32
 Q, K, V = torch.randn(n, h, t, d), torch.randn(n, h, t, d), torch.randn(n, h, t, d)
 attention_mask = torch.zeros(n, 1, 1, t).float()
 
+# Only block local attention with 1 global connection
 attn = BlockLocalSelfAttention(block_size=16, compute_global_attention=True, is_causal=False, attention_dropout_prob=0.1)
+
+# LSG attention with 1 global connection
+attn = LSGSelfAttention(block_size=32, sparsity_factor=8, sparsity_type="bos_pooling", compute_global_attention=True, is_causal=True)
 
 # expect (batch, num_heads, sequence_length, hidden_size) inputs,
 # attention_mask is (batch, 1, 1, sequence_length) 
