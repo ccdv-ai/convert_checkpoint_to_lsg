@@ -15,13 +15,15 @@ pip install lsg-converter
 * [Efficiency](#efficiency)
 * [Conversion](#convert-checkpoint-to-lsg)
 * [Usage](#model-usage)
-* [LSG-Self-Attention](#lsg-self-attention)
+* [LSG-Layer](#lsg-layer)
 * [LSG-Attention](#lsg-attention)
 * [Experiments](#experiments)
 
 # Compatible models
+Note that for non-compatible models, the LSG attention layer is available, see [LSG-Layer](#lsg-layer) and `lsg_converter/attention_layers` for more informations. 
 
-This script converts HuggingFace checkpoints to its LSG (Local-Sparse-Global) variant to handle long sequences. Available model types:
+This package can convert various HuggingFace checkpoints and architectures to their LSG (Local-Sparse-Global) variant to handle long sequences. \
+Available model types:
 
 * ALBERT [`"albert"`]
 * BART [`"bart"`] (encoder attention modified only)
@@ -132,7 +134,7 @@ inputs = tokenizer(SENTENCE, return_tensors="pt")
 model(**inputs)
 ```
 
-# LSG-Self-Attention
+# LSG-Layer
 
 You can find a self contained implementation of LSG attention (with no additional params), see `lsg_converter/attention_layers`. \
 Doesn't work for Cross Attention because the local context is ambiguous to define in this case. 
