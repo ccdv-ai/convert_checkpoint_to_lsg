@@ -186,7 +186,7 @@ class ConversionScript():
     def run_test(self):
         pass
     
-    def run_models(self, lsg_path, max_length, hidden_size, text, auto_map, gradient_checkpointing=True, is_encoder_decoder=False):
+    def run_models(self, lsg_path, max_length, hidden_size, text, auto_map, gradient_checkpointing=False, is_encoder_decoder=False):
 
         from transformers import AutoTokenizer, AutoConfig, AutoModel, pipeline
         from transformers import AutoModelForSequenceClassification, AutoModelForTokenClassification, AutoModelForQuestionAnswering

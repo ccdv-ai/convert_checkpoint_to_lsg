@@ -1,7 +1,7 @@
 from logging import warn
 import torch
 from transformers.models.bart.modeling_bart import *
-from transformers.models.bart.modeling_bart import _expand_mask
+from transformers.modeling_attn_mask_utils import _prepare_4d_attention_mask, _prepare_4d_causal_attention_mask
 import torch.nn as nn
 import sys
 
@@ -852,7 +852,7 @@ class LSGBartEncoder(LSGBartPretrainedModel, BartEncoder):
         # expand attention_mask
         if attention_mask is not None:
             # [bsz, seq_len] -> [bsz, 1, tgt_seq_len, src_seq_len]
-            attention_mask = _expand_mask(attention_mask, inputs_embeds.dtype)
+            attention_mask = _prepare_4d_attention_mask(attention_mask, inputs_embeds.dtype)
 
         encoder_states = () if output_hidden_states else None
         all_attentions = () if output_attentions else None
