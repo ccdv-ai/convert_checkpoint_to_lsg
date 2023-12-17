@@ -411,13 +411,11 @@ class LSGRobertaEmbeddings(RobertaEmbeddings):
 
     def forward(
         self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None, past_key_values_length=0
-        ):
+    ):
         if position_ids is None:
             if input_ids is not None:
                 # Create the position ids from the input token ids. Any padded tokens remain padded.
-                position_ids = create_position_ids_from_input_ids(
-                    input_ids, self.padding_idx, past_key_values_length
-                ).to(input_ids.device)
+                position_ids = create_position_ids_from_input_ids(input_ids, self.padding_idx, past_key_values_length)
             else:
                 position_ids = self.create_position_ids_from_inputs_embeds(inputs_embeds)
 
@@ -426,10 +424,18 @@ class LSGRobertaEmbeddings(RobertaEmbeddings):
         else:
             input_shape = inputs_embeds.size()[:-1]
 
-        seq_length = input_shape[-1]
+        seq_length = input_shape[1]
 
+        # Setting the token_type_ids to the registered buffer in constructor where it is all zeros, which usually occurs
+        # when its auto-generated, registered buffer helps users when tracing the model without passing token_type_ids, solves
+        # issue #5664
         if token_type_ids is None:
-            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
+            if hasattr(self, "token_type_ids"):
+                buffered_token_type_ids = self.token_type_ids[:, :seq_length]
+                buffered_token_type_ids_expanded = buffered_token_type_ids.expand(input_shape[0], seq_length)
+                token_type_ids = buffered_token_type_ids_expanded
+            else:
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
 
         if inputs_embeds is None:
             inputs_embeds = self.word_embeddings(input_ids)
@@ -998,6 +1004,7 @@ class LSGRobertaEncoder(RobertaEncoder):
         encoder_outputs.last_hidden_state = sequence_output 
         return encoder_outputs
 
+
 class LSGRobertaPreTrainedModel(RobertaPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -1033,6 +1040,12 @@ class LSGRobertaModel(LSGRobertaPreTrainedModel, RobertaModel):
                 "Cross attention is computed using full attention since it is not LSG compatible."
             )
         
+        self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
+        if self._use_flash_attention_2:
+            logger.warning(
+                    "[WARNING flash-attention]: LSG doesnt support flash-attention currently"
+                )
+            
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -1190,4 +1203,4 @@ try:
         str_to_class(value.split(".")[-1]).register_for_auto_class(key)
 except:
     warn("AutoRegister isn't available, you'll have to manually copy modeling.py after .save_pretrained(...).")
-    warn("Update to transformers >= 4.23.1 to fix.")
+    warn("Update to transformers >= 4.36.1 to fix.")

@@ -1,5 +1,5 @@
 from logging import warn
-from transformers.models.roberta.modeling_roberta import *
+from transformers.models.xlm_roberta.modeling_xlm_roberta import *
 import torch
 import torch.nn as nn
 from transformers.models.xlm_roberta.configuration_xlm_roberta import XLMRobertaConfig
@@ -153,7 +153,7 @@ class BaseAttentionProduct(nn.Module):
         del key_layer
 
         if attention_mask is not None:
-            # Apply the attention mask is (precomputed for all layers in RobertaModel forward() function)
+            # Apply the attention mask is (precomputed for all layers in XLMRobertaModel forward() function)
             attention_scores = attention_scores + attention_mask
             del attention_mask
 
@@ -397,7 +397,7 @@ class LSGAttentionProduct(nn.Module):
         return x.reshape(*x.size()[:-2], n_blocks, -1, d)
 
 
-class LSGRobertaEmbeddings(RobertaEmbeddings):
+class LSGXLMRobertaEmbeddings(XLMRobertaEmbeddings):
 
     def __init__(self, config):
         super().__init__(config)
@@ -411,13 +411,11 @@ class LSGRobertaEmbeddings(RobertaEmbeddings):
 
     def forward(
         self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None, past_key_values_length=0
-        ):
+    ):
         if position_ids is None:
             if input_ids is not None:
                 # Create the position ids from the input token ids. Any padded tokens remain padded.
-                position_ids = create_position_ids_from_input_ids(
-                    input_ids, self.padding_idx, past_key_values_length
-                ).to(input_ids.device)
+                position_ids = create_position_ids_from_input_ids(input_ids, self.padding_idx, past_key_values_length)
             else:
                 position_ids = self.create_position_ids_from_inputs_embeds(inputs_embeds)
 
@@ -426,10 +424,18 @@ class LSGRobertaEmbeddings(RobertaEmbeddings):
         else:
             input_shape = inputs_embeds.size()[:-1]
 
-        seq_length = input_shape[-1]
+        seq_length = input_shape[1]
 
+        # Setting the token_type_ids to the registered buffer in constructor where it is all zeros, which usually occurs
+        # when its auto-generated, registered buffer helps users when tracing the model without passing token_type_ids, solves
+        # issue #5664
         if token_type_ids is None:
-            token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
+            if hasattr(self, "token_type_ids"):
+                buffered_token_type_ids = self.token_type_ids[:, :seq_length]
+                buffered_token_type_ids_expanded = buffered_token_type_ids.expand(input_shape[0], seq_length)
+                token_type_ids = buffered_token_type_ids_expanded
+            else:
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
 
         if inputs_embeds is None:
             inputs_embeds = self.word_embeddings(input_ids)
@@ -453,7 +459,7 @@ class LSGRobertaEmbeddings(RobertaEmbeddings):
         return embeddings
 
 
-class LSGAttention(RobertaAttention):
+class LSGAttention(XLMRobertaAttention):
 
     def __init__(self, config):
         
@@ -912,7 +918,7 @@ class LSGSelfAttention(BaseSelfAttention):
         return x.reshape(n, h, -1, chunk_size, d)
 
 
-class LSGRobertaLayer(RobertaLayer):
+class LSGXLMRobertaLayer(XLMRobertaLayer):
     
     def __init__(self, config):
 
@@ -924,12 +930,12 @@ class LSGRobertaLayer(RobertaLayer):
             self.crossattention = LSGAttention(config)
 
 
-class LSGRobertaEncoder(RobertaEncoder):
+class LSGXLMRobertaEncoder(XLMRobertaEncoder):
 
     def __init__(self, config):
 
         super().__init__(config)
-        self.layer = nn.ModuleList([LSGRobertaLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layer = nn.ModuleList([LSGXLMRobertaLayer(config) for _ in range(config.num_hidden_layers)])
 
         assert hasattr(config, "num_global_tokens")
         self.num_global_tokens = config.num_global_tokens
@@ -997,7 +1003,8 @@ class LSGRobertaEncoder(RobertaEncoder):
         encoder_outputs.last_hidden_state = sequence_output 
         return encoder_outputs
 
-class LSGRobertaPreTrainedModel(RobertaPreTrainedModel):
+
+class LSGXLMRobertaPreTrainedModel(XLMRobertaPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
     models.
@@ -1009,11 +1016,11 @@ class LSGRobertaPreTrainedModel(RobertaPreTrainedModel):
     _no_split_modules = []
 
     def _set_gradient_checkpointing(self, module, value=False):
-        if isinstance(module, (RobertaEncoder, LSGRobertaEncoder)):
+        if isinstance(module, (XLMRobertaEncoder, LSGXLMRobertaEncoder)):
             module.gradient_checkpointing = value
 
 
-class LSGXLMRobertaModel(LSGRobertaPreTrainedModel, RobertaModel):
+class LSGXLMRobertaModel(LSGXLMRobertaPreTrainedModel, XLMRobertaModel):
     """
     This class overrides :class:`~transformers.RobertaModel`. Please check the superclass for the appropriate
     documentation alongside usage examples.
@@ -1021,17 +1028,23 @@ class LSGXLMRobertaModel(LSGRobertaPreTrainedModel, RobertaModel):
 
     def __init__(self, config, add_pooling_layer=True):
         
-        LSGRobertaPreTrainedModel.__init__(self, config)
+        LSGXLMRobertaPreTrainedModel.__init__(self, config)
 
-        self.embeddings = LSGRobertaEmbeddings(config)
-        self.encoder = LSGRobertaEncoder(config)
-        self.pooler = RobertaPooler(config) if add_pooling_layer else None
+        self.embeddings = LSGXLMRobertaEmbeddings(config)
+        self.encoder = LSGXLMRobertaEncoder(config)
+        self.pooler = XLMRobertaPooler(config) if add_pooling_layer else None
 
         if config.add_cross_attention:
             logger.warning(
                 "Cross attention is computed using full attention since it is not LSG compatible."
             )
         
+        self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
+        if self._use_flash_attention_2:
+            logger.warning(
+                    "[WARNING flash-attention]: LSG doesnt support flash-attention currently"
+                )
+            
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -1053,25 +1066,25 @@ class LSGXLMRobertaModel(LSGRobertaPreTrainedModel, RobertaModel):
         return extended_attention_mask
 
 
-class LSGXLMRobertaForCausalLM(LSGRobertaPreTrainedModel, RobertaForCausalLM):
+class LSGXLMRobertaForCausalLM(LSGXLMRobertaPreTrainedModel, XLMRobertaForCausalLM):
 
     _tied_weights_keys = ["lm_head.decoder.weight", "lm_head.decoder.bias"]
 
     def __init__(self, config):
 
-        LSGRobertaPreTrainedModel.__init__(self, config)
+        LSGXLMRobertaPreTrainedModel.__init__(self, config)
 
         if not config.is_decoder:
-            logger.warning("If you want to use `LSGRobertaLMHeadModel` as a standalone, add `is_decoder=True.`")
+            logger.warning("If you want to use `LSGXLMRobertaLMHeadModel` as a standalone, add `is_decoder=True.`")
 
         self.roberta = LSGXLMRobertaModel(config, add_pooling_layer=False)
-        self.lm_head = RobertaLMHead(config)
+        self.lm_head = XLMRobertaLMHead(config)
 
         # Initialize weights and apply final processing
         self.post_init()
 
 
-class LSGXLMRobertaForMaskedLM(LSGRobertaPreTrainedModel, RobertaForMaskedLM):
+class LSGXLMRobertaForMaskedLM(LSGXLMRobertaPreTrainedModel, XLMRobertaForMaskedLM):
     """
     This class overrides :class:`~transformers.RobertaForMaskedLM`. Please check the superclass for the appropriate
     documentation alongside usage examples.
@@ -1084,22 +1097,22 @@ class LSGXLMRobertaForMaskedLM(LSGRobertaPreTrainedModel, RobertaForMaskedLM):
 
     def __init__(self, config):
 
-        LSGRobertaPreTrainedModel.__init__(self, config)
+        LSGXLMRobertaPreTrainedModel.__init__(self, config)
 
         if config.is_decoder:
             logger.warning(
-                "If you want to use `LSGRobertaForMaskedLM` make sure `config.is_decoder=False` for "
+                "If you want to use `LSGXLMRobertaForMaskedLM` make sure `config.is_decoder=False` for "
                 "bi-directional self-attention."
             )
 
         self.roberta = LSGXLMRobertaModel(config, add_pooling_layer=False)
-        self.lm_head = RobertaLMHead(config)
+        self.lm_head = XLMRobertaLMHead(config)
 
         # Initialize weights and apply final processing
         self.post_init()
 
 
-class LSGXLMRobertaForSequenceClassification(LSGRobertaPreTrainedModel, RobertaForSequenceClassification):
+class LSGXLMRobertaForSequenceClassification(LSGXLMRobertaPreTrainedModel, XLMRobertaForSequenceClassification):
     """
     This class overrides :class:`~transformers.RobertaForSequenceClassification`. Please check the superclass for the
     appropriate documentation alongside usage examples.
@@ -1107,19 +1120,19 @@ class LSGXLMRobertaForSequenceClassification(LSGRobertaPreTrainedModel, RobertaF
 
     def __init__(self, config):
         
-        LSGRobertaPreTrainedModel.__init__(self, config)
+        LSGXLMRobertaPreTrainedModel.__init__(self, config)
 
         self.num_labels = config.num_labels
         self.config = config
 
         self.roberta = LSGXLMRobertaModel(config, add_pooling_layer=False)
-        self.classifier = RobertaClassificationHead(config)
+        self.classifier = XLMRobertaClassificationHead(config)
 
         # Initialize weights and apply final processing
         self.post_init()
 
 
-class LSGXLMRobertaForMultipleChoice(LSGRobertaPreTrainedModel, RobertaForMultipleChoice):
+class LSGXLMRobertaForMultipleChoice(LSGXLMRobertaPreTrainedModel, XLMRobertaForMultipleChoice):
     """
     This class overrides :class:`~transformers.RobertaForMultipleChoice`. Please check the superclass for the
     appropriate documentation alongside usage examples.
@@ -1129,7 +1142,7 @@ class LSGXLMRobertaForMultipleChoice(LSGRobertaPreTrainedModel, RobertaForMultip
 
     def __init__(self, config):
         
-        LSGRobertaPreTrainedModel.__init__(self, config)
+        LSGXLMRobertaPreTrainedModel.__init__(self, config)
 
         self.roberta = LSGXLMRobertaModel(config)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
@@ -1139,7 +1152,7 @@ class LSGXLMRobertaForMultipleChoice(LSGRobertaPreTrainedModel, RobertaForMultip
         self.post_init()
 
 
-class LSGXLMRobertaForTokenClassification(LSGRobertaPreTrainedModel, RobertaForTokenClassification):
+class LSGXLMRobertaForTokenClassification(LSGXLMRobertaPreTrainedModel, XLMRobertaForTokenClassification):
     """
     This class overrides :class:`~transformers.RobertaForTokenClassification`. Please check the superclass for the
     appropriate documentation alongside usage examples.
@@ -1147,7 +1160,7 @@ class LSGXLMRobertaForTokenClassification(LSGRobertaPreTrainedModel, RobertaForT
 
     def __init__(self, config):
         
-        LSGRobertaPreTrainedModel.__init__(self, config)
+        LSGXLMRobertaPreTrainedModel.__init__(self, config)
 
         self.num_labels = config.num_labels
 
@@ -1162,7 +1175,7 @@ class LSGXLMRobertaForTokenClassification(LSGRobertaPreTrainedModel, RobertaForT
         self.post_init()
 
 
-class LSGXLMRobertaForQuestionAnswering(LSGRobertaPreTrainedModel, RobertaForQuestionAnswering):
+class LSGXLMRobertaForQuestionAnswering(LSGXLMRobertaPreTrainedModel, XLMRobertaForQuestionAnswering):
     """
     This class overrides :class:`~transformers.RobertaForQuestionAnswering`. Please check the superclass for the
     appropriate documentation alongside usage examples.
@@ -1170,7 +1183,7 @@ class LSGXLMRobertaForQuestionAnswering(LSGRobertaPreTrainedModel, RobertaForQue
 
     def __init__(self, config):
         
-        LSGRobertaPreTrainedModel.__init__(self, config)
+        LSGXLMRobertaPreTrainedModel.__init__(self, config)
         
         self.num_labels = config.num_labels
 
@@ -1191,4 +1204,4 @@ try:
         str_to_class(value.split(".")[-1]).register_for_auto_class(key)
 except:
     warn("AutoRegister isn't available, you'll have to manually copy modeling.py after .save_pretrained(...).")
-    warn("Update to transformers >= 4.23.1 to fix.")
+    warn("Update to transformers >= 4.36.1 to fix.")

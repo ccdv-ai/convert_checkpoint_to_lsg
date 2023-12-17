@@ -100,14 +100,22 @@ class LSGEmbeddings(Embeddings):
 
         self.block_size = config.block_size
 
-    def forward(self, input_ids, inputs_embeds=None):
+    def forward(self, input_ids: torch.Tensor, input_embeds: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Parameters:
-            input_ids: torch.tensor(bs, max_seq_length) The token ids to embed.
+            input_ids (torch.Tensor):
+                torch.tensor(bs, max_seq_length) The token ids to embed.
+            input_embeds (*optional*, torch.Tensor):
+                The pre-computed word embeddings. Can only be passed if the input ids are `None`.
+
+
         Returns: torch.tensor(bs, max_seq_length, dim) The embedded tokens (plus position embeddings, no token_type
         embeddings)
         """
-        bs, seq_length = input_ids.shape[:2] if input_ids is not None else inputs_embeds.shape[:2]
+        if input_ids is not None:
+            word_embeddings = self.word_embeddings(input_ids)  # (bs, max_seq_length, dim)
+
+        seq_length = word_embeddings.size(1)
 
         # Setting the position-ids to the registered buffer in constructor, it helps
         # when tracing the model without passing position-ids, solves
@@ -116,9 +124,8 @@ class LSGEmbeddings(Embeddings):
             position_ids = self.position_ids[:, :seq_length]
         else:
             position_ids = torch.arange(seq_length, dtype=torch.long, device=input_ids.device)  # (max_seq_length)
-            position_ids = position_ids.unsqueeze(0).expand(bs, seq_length)  # (bs, max_seq_length)
-
-        word_embeddings = self.word_embeddings(input_ids) if input_ids is not None else inputs_embeds
+            position_ids = position_ids.unsqueeze(0).expand_as(input_ids)  # (bs, max_seq_length)
+            
         position_embeddings = self.position_embeddings(position_ids)  # (bs, max_seq_length, dim)
         word_embeddings = word_embeddings + position_embeddings  # (bs, max_seq_length, dim)
 
@@ -853,6 +860,12 @@ class LSGDistilBertModel(LSGDistilBertPreTrainedModel, DistilBertModel):
         self.transformer = LSGTransformer(config)  # Encoder
         self.num_global_tokens = config.num_global_tokens
         # Initialize weights and apply final processing
+
+        self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
+        if self._use_flash_attention_2:
+            logger.warning(
+                    "[WARNING flash-attention]: LSG doesnt support flash-attention currently"
+                )
         self.post_init()
 
 
@@ -952,4 +965,4 @@ try:
         str_to_class(value.split(".")[-1]).register_for_auto_class(key)
 except:
     warn("AutoRegister isn't available, you'll have to manually copy modeling.py after .save_pretrained(...).")
-    warn("Update to transformers >= 4.23.1 to fix.")
+    warn("Update to transformers >= 4.36.1 to fix.")

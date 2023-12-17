@@ -83,14 +83,25 @@ class BertConversionScript(ConversionScript):
 
         new_position_embeddings_weights = torch.cat([
             position_embeddings_weights for _ in range(max_pos//current_max_position + 1)
-            ], dim=0)[:max_pos]
+            ], dim=0)[:max_pos + self._DEFAULT_POSITIONAL_OFFSET]
 
         module_prefix.embeddings.position_embeddings = nn.Embedding(
             *new_position_embeddings_weights.size(), 
             _weight=new_position_embeddings_weights,
             dtype=new_position_embeddings_weights.dtype
             )
-
+        self.update_buffer(module_prefix.embeddings, max_pos + self._DEFAULT_POSITIONAL_OFFSET)
+        
+    def update_buffer(self, module, value):
+        
+        # Update buffer dogshit
+        module.register_buffer(
+            "position_ids", torch.arange(value).expand((1, -1)), persistent=False
+        )
+        module.register_buffer(
+            "token_type_ids", torch.zeros(module.position_ids.size(), dtype=torch.long), persistent=False
+        )
+        
     def run_test(self):
         
         from transformers import AutoConfig, AutoTokenizer

@@ -413,54 +413,54 @@ class LSGAlbertEmbeddings(AlbertEmbeddings):
         self.block_size = config.block_size
 
     def forward(
-            self,
-            input_ids=None,
-            token_type_ids=None,
-            position_ids=None,
-            inputs_embeds=None,
-            past_key_values_length=0,
-        ) -> torch.Tensor:
-            if input_ids is not None:
-                input_shape = input_ids.size()
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        token_type_ids: Optional[torch.LongTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        past_key_values_length: int = 0,
+    ) -> torch.Tensor:
+        if input_ids is not None:
+            input_shape = input_ids.size()
+        else:
+            input_shape = inputs_embeds.size()[:-1]
+
+        seq_length = input_shape[1]
+
+        if position_ids is None:
+            position_ids = self.position_ids[:, past_key_values_length : seq_length + past_key_values_length]
+
+        # Setting the token_type_ids to the registered buffer in constructor where it is all zeros, which usually occurs
+        # when its auto-generated, registered buffer helps users when tracing the model without passing token_type_ids, solves
+        # issue #5664
+        if token_type_ids is None:
+            if hasattr(self, "token_type_ids"):
+                buffered_token_type_ids = self.token_type_ids[:, :seq_length]
+                buffered_token_type_ids_expanded = buffered_token_type_ids.expand(input_shape[0], seq_length)
+                token_type_ids = buffered_token_type_ids_expanded
             else:
-                input_shape = inputs_embeds.size()[:-1]
+                token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
 
-            seq_length = input_shape[1]
+        if inputs_embeds is None:
+            inputs_embeds = self.word_embeddings(input_ids)
+        token_type_embeddings = self.token_type_embeddings(token_type_ids)
 
-            if position_ids is None:
-                position_ids = self.position_ids[:, past_key_values_length : seq_length + past_key_values_length]
+        embeddings = inputs_embeds + token_type_embeddings
+        if self.position_embedding_type == "absolute":
+            position_embeddings = self.position_embeddings(position_ids)
+            embeddings += position_embeddings
 
-            # Setting the token_type_ids to the registered buffer in constructor where it is all zeros, which usually occurs
-            # when its auto-generated, registered buffer helps users when tracing the model without passing token_type_ids, solves
-            # issue #5664
-            if token_type_ids is None:
-                if hasattr(self, "token_type_ids"):
-                    buffered_token_type_ids = self.token_type_ids[:, :seq_length]
-                    buffered_token_type_ids_expanded = buffered_token_type_ids.expand(input_shape[0], seq_length)
-                    token_type_ids = buffered_token_type_ids_expanded
-                else:
-                    token_type_ids = torch.zeros(input_shape, dtype=torch.long, device=self.position_ids.device)
+        n, t, d = embeddings.size()
+    
+        # Add global_tokens
+        indexes = torch.arange(self.num_global_tokens, device=embeddings.device).reshape(1, -1)
+        global_embeddings = self.global_embeddings(indexes) 
+        embeddings = torch.cat([global_embeddings.expand(n, -1, d), embeddings], dim=-2)
+    
 
-            if inputs_embeds is None:
-                inputs_embeds = self.word_embeddings(input_ids)
-            token_type_embeddings = self.token_type_embeddings(token_type_ids)
-
-            embeddings = inputs_embeds + token_type_embeddings
-            if self.position_embedding_type == "absolute":
-                position_embeddings = self.position_embeddings(position_ids)
-                embeddings += position_embeddings
-
-            n, t, d = embeddings.size()
-        
-            # Add global_tokens
-            indexes = torch.arange(self.num_global_tokens, device=embeddings.device).reshape(1, -1)
-            global_embeddings = self.global_embeddings(indexes) 
-            embeddings = torch.cat([global_embeddings.expand(n, -1, d), embeddings], dim=-2)
-        
-
-            embeddings = self.LayerNorm(embeddings)
-            embeddings = self.dropout(embeddings)
-            return embeddings
+        embeddings = self.LayerNorm(embeddings)
+        embeddings = self.dropout(embeddings)
+        return embeddings
 
 
 class LSGSelfAttention(BaseSelfAttention):
@@ -907,6 +907,11 @@ class LSGAlbertModel(LSGAlbertPreTrainedModel, AlbertModel):
             self.pooler = None
             self.pooler_activation = None
 
+        self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
+        if self._use_flash_attention_2:
+            logger.warning(
+                    "[WARNING flash-attention]: LSG doesnt support flash-attention currently"
+                )
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -1015,4 +1020,4 @@ try:
         str_to_class(value.split(".")[-1]).register_for_auto_class(key)
 except:
     warn("AutoRegister isn't available, you'll have to manually copy modeling.py after .save_pretrained(...).")
-    warn("Update to transformers >= 4.23.1 to fix.")
+    warn("Update to transformers >= 4.36.1 to fix.")

@@ -74,11 +74,8 @@ class BartConversionScript(ConversionScript):
             [position_embeddings_weights[self._DEFAULT_POSITIONAL_OFFSET:] for _ in range(max_pos//current_max_position + 1)], 
             dim=0)[:max_pos + self._DEFAULT_POSITIONAL_OFFSET]
 
-        module_prefix.encoder.embed_positions = nn.Embedding(
-            *new_position_embeddings_weights.size(), 
-            _weight=new_position_embeddings_weights,
-            dtype=new_position_embeddings_weights.dtype
-            )
+        module_prefix.encoder.embed_positions.weight = nn.Parameter(new_position_embeddings_weights, requires_grad=True)
+        module_prefix.encoder.embed_positions.num_embeddings = max_pos + self._DEFAULT_POSITIONAL_OFFSET
 
         # Decoder
         position_embeddings_weights = module_prefix.decoder.embed_positions.weight.clone()
@@ -89,12 +86,8 @@ class BartConversionScript(ConversionScript):
             [position_embeddings_weights[self._DEFAULT_POSITIONAL_OFFSET:] for _ in range(max_pos//current_max_position + 1)], 
             dim=0)[:max_pos + self._DEFAULT_POSITIONAL_OFFSET]
 
-        module_prefix.decoder.embed_positions = nn.Embedding(
-            *new_position_embeddings_weights.size(), 
-            _weight=new_position_embeddings_weights,
-            dtype=new_position_embeddings_weights.dtype
-            )
-        
+        module_prefix.decoder.embed_positions.weight = nn.Parameter(new_position_embeddings_weights, requires_grad=True)
+        module_prefix.decoder.embed_positions.num_embeddings = max_pos + self._DEFAULT_POSITIONAL_OFFSET
 
     def run_test(self):
         

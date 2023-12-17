@@ -94,6 +94,7 @@ class BarthezConversionScript(ConversionScript):
             _weight=new_position_embeddings_weights,
             dtype=new_position_embeddings_weights.dtype
             )
+        module_prefix.decoder.__init__(self.config)
 
     def run_test(self):
         

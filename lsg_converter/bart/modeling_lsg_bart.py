@@ -828,17 +828,17 @@ class LSGBartEncoder(LSGBartPretrainedModel, BartEncoder):
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
         elif input_ids is not None:
-            input_shape = input_ids.size()
-            input_ids = input_ids.view(-1, input_shape[-1])
+            input = input_ids
+            input_ids = input_ids.view(-1, input_ids.shape[-1])
         elif inputs_embeds is not None:
-            input_shape = inputs_embeds.size()[:-1]
+            input = inputs_embeds[:, :, -1]
         else:
             raise ValueError("You have to specify either input_ids or inputs_embeds")
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids) * self.embed_scale
 
-        embed_pos = self.embed_positions(inputs_embeds)
+        embed_pos = self.embed_positions(input).to(inputs_embeds.device)
         hidden_states = inputs_embeds + embed_pos
 
         # Add global tokens
@@ -931,6 +931,12 @@ class LSGBartModel(LSGBartPretrainedModel, BartModel):
         self.encoder = LSGBartEncoder(config, self.shared)
         self.decoder = BartDecoder(config, self.shared)
 
+        self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
+        if self._use_flash_attention_2:
+            logger.warning(
+                    "[WARNING flash-attention]: LSG doesnt support flash-attention currently"
+                )
+            
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -1093,4 +1099,4 @@ try:
         str_to_class(value.split(".")[-1]).register_for_auto_class(key)
 except:
     warn("AutoRegister isn't available, you'll have to manually copy modeling.py after .save_pretrained(...).")
-    warn("Update to transformers >= 4.23.1 to fix.")
+    warn("Update to transformers >= 4.36.1 to fix.")

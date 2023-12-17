@@ -411,8 +411,13 @@ class LSGBertEmbeddings(BertEmbeddings):
         self.block_size = config.block_size
 
     def forward(
-        self, input_ids=None, token_type_ids=None, position_ids=None, inputs_embeds=None, past_key_values_length=0
-    ):
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        token_type_ids: Optional[torch.LongTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        past_key_values_length: int = 0,
+    ) -> torch.Tensor:
         if input_ids is not None:
             input_shape = input_ids.size()
         else:
@@ -1005,6 +1010,7 @@ class LSGBertEncoder(BertEncoder):
         encoder_outputs.last_hidden_state = sequence_output 
         return encoder_outputs
 
+
 class LSGBertPreTrainedModel(BertPreTrainedModel):
     """
     An abstract class to handle weights initialization and a simple interface for downloading and loading pretrained
@@ -1039,6 +1045,12 @@ class LSGBertModel(LSGBertPreTrainedModel, BertModel):
                 "Cross attention is computed using full attention since it is not LSG compatible."
             )
         
+        self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
+        if self._use_flash_attention_2:
+            logger.warning(
+                    "[WARNING flash-attention]: LSG doesnt support flash-attention currently"
+                )
+            
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -1228,4 +1240,4 @@ try:
         str_to_class(value.split(".")[-1]).register_for_auto_class(key)
 except:
     warn("AutoRegister isn't available, you'll have to manually copy modeling.py after .save_pretrained(...).")
-    warn("Update to transformers >= 4.23.1 to fix.")
+    warn("Update to transformers >= 4.36.1 to fix.")

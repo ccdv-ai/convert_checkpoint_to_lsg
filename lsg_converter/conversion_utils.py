@@ -48,6 +48,8 @@ class ConversionScript():
         self.config = config
         self.save_model = save_model
 
+        self.new_config = None
+
     def save(self, model, tokenizer):
 
         model.save_pretrained(self.model_name)
@@ -104,14 +106,14 @@ class ConversionScript():
         return _architecture, architecture
 
     def get_model(self, lsg_architecture, lsg_model):
-        config = self._CONFIG_MODULE.from_pretrained(
+        self.new_config = self._CONFIG_MODULE.from_pretrained(
             self.initial_model, 
             architectures=lsg_architecture, 
             trust_remote_code=True, 
             use_auth_token=self.use_auth_token,
             **json.loads(self.model_kwargs.replace("'", "\""))
             )
-        model = lsg_model.from_pretrained(self.initial_model, use_auth_token=self.use_auth_token, config=config, trust_remote_code=True)
+        model = lsg_model.from_pretrained(self.initial_model, use_auth_token=self.use_auth_token, config=self.new_config, trust_remote_code=True)
         tokenizer = AutoTokenizer.from_pretrained(self.initial_model, use_auth_token=self.use_auth_token, trust_remote_code=True)
         return model, tokenizer
 
@@ -166,7 +168,10 @@ class ConversionScript():
     
     def update_positions_with_model(self, model, max_pos):
         pass
-
+    
+    def update_buffer(self, module, value):
+        pass
+    
     def order_positions(self, positions, stride):
         n, d = positions.size()
         if n % 512 != 0:

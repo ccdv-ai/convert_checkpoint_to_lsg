@@ -972,6 +972,12 @@ class LSGPegasusModel(LSGPegasusPreTrainedModel, PegasusModel):
         self.encoder = LSGPegasusEncoder(config, self.shared)
         self.decoder = PegasusDecoder(config, self.shared)
 
+        self._use_flash_attention_2 = config._attn_implementation == "flash_attention_2"
+        if self._use_flash_attention_2:
+            logger.warning(
+                    "[WARNING flash-attention]: LSG doesnt support flash-attention currently"
+                )
+            
         # Initialize weights and apply final processing
         self.post_init()
 
@@ -1122,4 +1128,4 @@ try:
         str_to_class(value.split(".")[-1]).register_for_auto_class(key)
 except:
     warn("AutoRegister isn't available, you'll have to manually copy modeling.py after .save_pretrained(...).")
-    warn("Update to transformers >= 4.23.1 to fix.")
+    warn("Update to transformers >= 4.36.1 to fix.")

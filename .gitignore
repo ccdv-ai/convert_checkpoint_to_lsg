@@ -3,6 +3,7 @@
 __pycache__/*
 .gitignore
 convert_all_models.sh
+convert_all_models.py
 convert_single_model.sh
 lsg_converter/*/__pycache__
 lsg_converter.egg-info/*
